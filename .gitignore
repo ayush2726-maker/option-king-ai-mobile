@@ -1,0 +1,13 @@
+.expo/
+.expo
+/.expo/
+node_modules/
+dist/
+build/
+builds/
+logs/
+android/
+ios/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
