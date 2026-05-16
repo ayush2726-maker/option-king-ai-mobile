@@ -7,8 +7,10 @@ Mobile control app for Option King AI phone server.
 This repo builds a debug APK with GitHub Actions.
 
 1. Open the Actions tab.
-2. Run `Build Android APK`.
+2. Run `Build Android APK` or wait for the latest push build.
 3. Download artifact `OptionKingAI-debug-apk`.
 
 Default server URL: `http://100.118.218.98:8765`
 Default token: `optionking-local`
+
+Build trigger: 2026-05-17
