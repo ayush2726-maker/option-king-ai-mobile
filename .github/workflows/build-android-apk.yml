@@ -12,8 +12,8 @@ on:
       - master
 
 jobs:
-  build-debug-apk:
-    name: Build debug APK
+  build-release-apk:
+    name: Build standalone release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -62,15 +62,15 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: "1"
 
-      - name: Build APK
+      - name: Build standalone release APK
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK artifact
+      - name: Upload standalone APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OptionKingAI-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: OptionKingAI-standalone-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
