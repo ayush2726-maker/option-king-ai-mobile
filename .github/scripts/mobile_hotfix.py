@@ -14,6 +14,7 @@ def replace_once(text, old, new):
 app_path = Path("App.js")
 text = app_path.read_text(encoding="utf-8")
 text = re.sub(r'const APP_BUILD_LABEL = ".*?";', f'const APP_BUILD_LABEL = "{APP_BUILD_LABEL}";', text)
+text = text.replace('const serverMode = mode === "MONTHLY" ? "REAL_MONTHLY" : mode;', 'const serverMode = mode === "MONTHLY" ? "MONTHLY" : mode;')
 
 text = replace_once(
     text,
