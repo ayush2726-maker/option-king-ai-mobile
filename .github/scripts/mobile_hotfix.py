@@ -62,6 +62,51 @@ if "function updateTradeMode" not in text:
         '  function updateCapital() {\n',
     )
 
+if "<AiDecisionCard status={status}" not in text:
+    text = replace_once(
+        text,
+        """            <View style={styles.panel}>
+              <View style={styles.panelHeaderRow}>
+                <Text style={styles.panelTitle}>Server Health</Text>""",
+        """            <AiDecisionCard status={status} />
+
+            <View style={styles.panel}>
+              <View style={styles.panelHeaderRow}>
+                <Text style={styles.panelTitle}>Server Health</Text>""",
+    )
+
+if "function shortRegime" not in text:
+    text = replace_once(
+        text,
+        'function formatBacktestReport(report) {\n',
+        'function shortRegime(value) {\n'
+        '  if (!value) return "--";\n'
+        '  return String(value).replace(/_/g, " ").replace(/\\b\\w/g, (char) => char.toUpperCase()).slice(0, 22);\n'
+        '}\n\n'
+        'function weightedComponentRows(components) {\n'
+        '  if (!components || typeof components !== "object") return [];\n'
+        '  const labels = {\n'
+        '    orb_breakout: "ORB",\n'
+        '    vwap_alignment: "VWAP",\n'
+        '    ema_alignment: "EMA",\n'
+        '    volume_spike: "Volume",\n'
+        '    strong_candle_close: "Candle",\n'
+        '    option_chain_support: "Chain",\n'
+        '    oi_buildup: "OI",\n'
+        '    atr_volatility: "ATR",\n'
+        '  };\n'
+        '  return Object.entries(components)\n'
+        '    .filter(([, value]) => value && typeof value === "object")\n'
+        '    .map(([key, value]) => ({\n'
+        '      key,\n'
+        '      label: labels[key] || shortRegime(key),\n'
+        '      score: Number(value.score || 0),\n'
+        '      weight: Number(value.weight || 0),\n'
+        '    }));\n'
+        '}\n\n'
+        'function formatBacktestReport(report) {\n',
+    )
+
 text = replace_once(
     text,
     'function SmallButton({ title, onPress, green, red, blue }) {\n'
@@ -87,6 +132,85 @@ text = replace_once(
     '  );\n'
     '}',
 )
+
+if "function AiDecisionCard" not in text:
+    text = replace_once(
+        text,
+        'function SmallButton({ title, onPress, green, red, blue }) {\n',
+        'function AiDecisionCard({ status }) {\n'
+        '  const decision = status?.weighted_decision_engine || {};\n'
+        '  const gemini = status?.gemini_decision && Object.keys(status.gemini_decision).length ? status.gemini_decision : decision.gemini_decision || {};\n'
+        '  const suggestion = status?.suggestion || {};\n'
+        '  const score = Number(status?.weighted_score ?? decision.score ?? suggestion.weighted_score ?? status?.score ?? 0);\n'
+        '  const confidence = Number(gemini.confidence ?? decision.confidence ?? suggestion.confidence ?? status?.confidence ?? 0);\n'
+        '  const fake = Number(status?.fake_breakout_probability ?? gemini.fake_breakout_probability ?? decision.fake_breakout_probability ?? suggestion.fake_breakout_probability ?? 0);\n'
+        '  const entryType = gemini.entry_type || decision.entry_type || suggestion.entry_type || "NONE";\n'
+        '  const risk = gemini.risk || decision.risk || suggestion.risk || "--";\n'
+        '  const signal = gemini.signal || decision.signal || suggestion.signal || status?.signal || "WAIT";\n'
+        '  const regime = status?.market_regime || decision.market_regime || suggestion.market_regime?.regime || suggestion.market_regime || "--";\n'
+        '  const reason = gemini.reason || decision.reason || suggestion.reason || "Waiting for market data";\n'
+        '  const componentRows = weightedComponentRows(decision.components || suggestion.weighted_components || {});\n'
+        '  const scorePct = Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));\n'
+        '  const confidencePct = Math.max(0, Math.min(100, Number.isFinite(confidence) ? confidence : 0));\n'
+        '  const fakePct = Math.max(0, Math.min(100, Number.isFinite(fake) ? fake : 0));\n'
+        '  const takeTrade = Boolean(gemini.take_trade || (signal !== "WAIT" && confidencePct > 75));\n\n'
+        '  return (\n'
+        '    <View style={styles.aiPanel}>\n'
+        '      <View style={styles.panelHeaderRow}>\n'
+        '        <View style={styles.modeTextBlock}>\n'
+        '          <Text style={styles.panelTitle}>AI Decision Center</Text>\n'
+        '          <Text style={styles.aiSubTitle}>{shortRegime(regime)} | {entryType} | {risk}</Text>\n'
+        '        </View>\n'
+        '        <Text style={[styles.modePill, takeTrade ? styles.modePillGood : styles.modePillBad]}>{signal}</Text>\n'
+        '      </View>\n'
+        '      <View style={styles.aiMetricRow}>\n'
+        '        <AiMetric label="Weighted" value={`${scorePct.toFixed(0)}/100`} good={scorePct >= 70} />\n'
+        '        <AiMetric label="Confidence" value={`${confidencePct.toFixed(0)}%`} good={confidencePct > 75} />\n'
+        '        <AiMetric label="Fake Risk" value={`${fakePct.toFixed(0)}%`} bad={fakePct > 42} />\n'
+        '      </View>\n'
+        '      <ProgressLine label="Score" value={scorePct} good={scorePct >= 70} />\n'
+        '      <ProgressLine label="Confidence" value={confidencePct} good={confidencePct > 75} />\n'
+        '      <ProgressLine label="Fake Breakout" value={fakePct} bad={fakePct > 42} />\n'
+        '      <Text style={styles.aiReason}>{reason}</Text>\n'
+        '      {componentRows.length ? (\n'
+        '        <View style={styles.componentGrid}>\n'
+        '          {componentRows.map((item) => (\n'
+        '            <View key={item.key} style={styles.componentChip}>\n'
+        '              <Text style={styles.componentLabel}>{item.label}</Text>\n'
+        '              <Text style={styles.componentScore}>{item.score}/{item.weight}</Text>\n'
+        '            </View>\n'
+        '          ))}\n'
+        '        </View>\n'
+        '      ) : (\n'
+        '        <Text style={styles.connectionHelp}>Component scores will appear after the next live market decision.</Text>\n'
+        '      )}\n'
+        '    </View>\n'
+        '  );\n'
+        '}\n\n'
+        'function AiMetric({ label, value, good, bad }) {\n'
+        '  return (\n'
+        '    <View style={styles.aiMetric}>\n'
+        '      <Text style={styles.metricLabel}>{label}</Text>\n'
+        '      <Text style={[styles.aiMetricValue, good && styles.good, bad && styles.bad]}>{value}</Text>\n'
+        '    </View>\n'
+        '  );\n'
+        '}\n\n'
+        'function ProgressLine({ label, value, good, bad }) {\n'
+        '  const pct = Math.max(0, Math.min(100, Number(value || 0)));\n'
+        '  return (\n'
+        '    <View style={styles.progressWrap}>\n'
+        '      <View style={styles.progressHeader}>\n'
+        '        <Text style={styles.progressLabel}>{label}</Text>\n'
+        '        <Text style={styles.progressValue}>{pct.toFixed(0)}%</Text>\n'
+        '      </View>\n'
+        '      <View style={styles.progressTrack}>\n'
+        '        <View style={[styles.progressFill, { width: `${pct}%` }, good && styles.progressGood, bad && styles.progressBad]} />\n'
+        '      </View>\n'
+        '    </View>\n'
+        '  );\n'
+        '}\n\n'
+        'function SmallButton({ title, onPress, green, red, blue }) {\n',
+    )
 
 text = replace_once(
     text,
@@ -266,6 +390,38 @@ if "  modeSwitchHeader: {" not in text:
         '  modeTextBlock: { flex: 1, minWidth: 0 },\n'
         '  liveSwitchRow: { alignItems: "center", backgroundColor: "#0d1b2e", borderColor: "#263954", borderRadius: 8, borderWidth: 1, flexDirection: "row", gap: 10, justifyContent: "space-between", paddingHorizontal: 10, paddingVertical: 9 },\n'
         '  autoText: { color: "#f8fafc", fontSize: 14, fontWeight: "800" },',
+    )
+
+if "  aiPanel: {" not in text:
+    text = replace_once(
+        text,
+        '  panel: { backgroundColor: "#101b2d", borderColor: "#2f4363", borderWidth: 1, borderRadius: 8, padding: 14 },\n',
+        '  panel: { backgroundColor: "#101b2d", borderColor: "#2f4363", borderWidth: 1, borderRadius: 8, padding: 14 },\n'
+        '  aiPanel: { backgroundColor: "#0d1b2e", borderColor: "#55c7ff", borderWidth: 1, borderRadius: 8, padding: 14 },\n',
+    )
+
+if "  aiMetricRow: {" not in text:
+    text = replace_once(
+        text,
+        '  metricValue: { color: "#f8fafc", fontSize: 12, fontWeight: "900", marginTop: 3 },\n',
+        '  metricValue: { color: "#f8fafc", fontSize: 12, fontWeight: "900", marginTop: 3 },\n'
+        '  aiSubTitle: { color: "#94a3b8", fontSize: 11, fontWeight: "900", marginTop: -6 },\n'
+        '  aiMetricRow: { flexDirection: "row", gap: 8, marginBottom: 10 },\n'
+        '  aiMetric: { backgroundColor: "#08111f", borderColor: "#263954", borderRadius: 7, borderWidth: 1, flex: 1, paddingHorizontal: 8, paddingVertical: 9 },\n'
+        '  aiMetricValue: { color: "#f8fafc", fontSize: 16, fontWeight: "900", marginTop: 4 },\n'
+        '  progressWrap: { marginTop: 8 },\n'
+        '  progressHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 },\n'
+        '  progressLabel: { color: "#cbd5e1", fontSize: 11, fontWeight: "900" },\n'
+        '  progressValue: { color: "#94a3b8", fontSize: 11, fontWeight: "900" },\n'
+        '  progressTrack: { backgroundColor: "#08111f", borderColor: "#263954", borderRadius: 999, borderWidth: 1, height: 10, overflow: "hidden" },\n'
+        '  progressFill: { backgroundColor: "#55c7ff", borderRadius: 999, height: "100%" },\n'
+        '  progressGood: { backgroundColor: "#2ee59d" },\n'
+        '  progressBad: { backgroundColor: "#ff5c7a" },\n'
+        '  aiReason: { backgroundColor: "#08111f", borderColor: "#263954", borderRadius: 7, borderWidth: 1, color: "#dbeafe", fontSize: 12, fontWeight: "800", lineHeight: 18, marginTop: 12, padding: 9 },\n'
+        '  componentGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },\n'
+        '  componentChip: { backgroundColor: "#16263f", borderColor: "#2f4363", borderRadius: 7, borderWidth: 1, minWidth: "30%", paddingHorizontal: 9, paddingVertical: 8 },\n'
+        '  componentLabel: { color: "#94a3b8", fontSize: 10, fontWeight: "900" },\n'
+        '  componentScore: { color: "#f8fafc", fontSize: 13, fontWeight: "900", marginTop: 3 },\n',
     )
 
 app_path.write_text(text, encoding="utf-8")
