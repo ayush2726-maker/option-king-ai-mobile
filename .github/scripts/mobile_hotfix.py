@@ -1,441 +1,52 @@
+import base64
+import gzip
 import json
-import re
 from pathlib import Path
 
 
 APP_BUILD_LABEL = "1.0.0 build 18"
 MIN_VERSION_CODE = 18
+APP_JS_GZ_B64 = """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"""
 
 
-def replace_once(text, old, new):
-    return text.replace(old, new) if old in text else text
+def write_verified_app_js():
+    app_text = gzip.decompress(base64.b64decode(APP_JS_GZ_B64)).decode("utf-8")
+    required = [
+        'const APP_BUILD_LABEL = "1.0.0 build 18";',
+        '<AiDecisionCard status={status} />',
+        'AI Decision Center',
+        'infoScroll',
+        'logScroll',
+        'modeSwitchHeader',
+        'PAPER SAFE',
+        'const serverMode = mode === "MONTHLY" ? "MONTHLY" : mode;',
+    ]
+    missing = [item for item in required if item not in app_text]
+    if missing:
+        raise RuntimeError("Bundled App.js missing required mobile UI markers: " + ", ".join(missing))
+    Path("App.js").write_text(app_text, encoding="utf-8")
 
 
-app_path = Path("App.js")
-text = app_path.read_text(encoding="utf-8")
-text = re.sub(r'const APP_BUILD_LABEL = ".*?";', f'const APP_BUILD_LABEL = "{APP_BUILD_LABEL}";', text)
-text = text.replace('const serverMode = mode === "MONTHLY" ? "REAL_MONTHLY" : mode;', 'const serverMode = mode === "MONTHLY" ? "MONTHLY" : mode;')
+def update_app_json():
+    app_json_path = Path("app.json")
+    app_json = json.loads(app_json_path.read_text(encoding="utf-8"))
+    expo = app_json.setdefault("expo", {})
+    android = expo.setdefault("android", {})
+    android["versionCode"] = max(int(android.get("versionCode", 0) or 0), MIN_VERSION_CODE)
+    app_json_path.write_text(json.dumps(app_json, indent=2) + "\n", encoding="utf-8")
 
-if "const [tradeMode, setTradeMode]" not in text:
-    text = replace_once(
-        text,
-        '  const [settingsLoaded, setSettingsLoaded] = useState(false);\n',
-        '  const [settingsLoaded, setSettingsLoaded] = useState(false);\n'
-        '  const [tradeMode, setTradeMode] = useState("PAPER");\n'
-        '  const [liveTradingEnabled, setLiveTradingEnabled] = useState(false);\n',
-    )
 
-if "setTradeMode(nextStatus" not in text:
-    text = replace_once(
-        text,
-        '      setStatus(nextStatus);\n'
-        '      setCapitalInput(String(nextStatus?.paper_capital || nextStatus?.capital || ""));',
-        '      setStatus(nextStatus);\n'
-        '      setTradeMode(nextStatus?.trade_mode || nextStatus?.mode || "PAPER");\n'
-        '      setLiveTradingEnabled(Boolean(nextStatus?.live_trading_enabled));\n'
-        '      setCapitalInput(String(nextStatus?.paper_capital || nextStatus?.capital || ""));',
-    )
-
-if "function updateTradeMode" not in text:
-    text = replace_once(
-        text,
-        '  function updateCapital() {\n',
-        '  function updateTradeMode(nextMode, nextLiveEnabled = liveTradingEnabled) {\n'
-        '    const mode = String(nextMode || "PAPER").toUpperCase();\n'
-        '    if (mode === "LIVE" && nextLiveEnabled) {\n'
-        '      Alert.alert(\n'
-        '        "Enable Live Trading?",\n'
-        '        "LIVE mode sends real Angel One orders. Use only after checking capital, token, product type, and risk.",\n'
-        '        [\n'
-        '          { text: "Cancel", style: "cancel" },\n'
-        '          {\n'
-        '            text: "Enable LIVE",\n'
-        '            style: "destructive",\n'
-        '            onPress: () => postJson("/mode", { trade_mode: "LIVE", live_trading_enabled: true }, "Live mode"),\n'
-        '          },\n'
-        '        ],\n'
-        '      );\n'
-        '      return;\n'
-        '    }\n'
-        '    postJson("/mode", { trade_mode: mode, live_trading_enabled: Boolean(nextLiveEnabled) }, "Trade mode");\n'
-        '  }\n\n'
-        '  function updateCapital() {\n',
-    )
-
-if "<AiDecisionCard status={status}" not in text:
-    text = replace_once(
-        text,
-        """            <View style={styles.panel}>
-              <View style={styles.panelHeaderRow}>
-                <Text style={styles.panelTitle}>Server Health</Text>""",
-        """            <AiDecisionCard status={status} />
-
-            <View style={styles.panel}>
-              <View style={styles.panelHeaderRow}>
-                <Text style={styles.panelTitle}>Server Health</Text>""",
-    )
-
-if "function shortRegime" not in text:
-    text = replace_once(
-        text,
-        'function formatBacktestReport(report) {\n',
-        'function shortRegime(value) {\n'
-        '  if (!value) return "--";\n'
-        '  return String(value).replace(/_/g, " ").replace(/\\b\\w/g, (char) => char.toUpperCase()).slice(0, 22);\n'
-        '}\n\n'
-        'function weightedComponentRows(components) {\n'
-        '  if (!components || typeof components !== "object") return [];\n'
-        '  const labels = {\n'
-        '    orb_breakout: "ORB",\n'
-        '    vwap_alignment: "VWAP",\n'
-        '    ema_alignment: "EMA",\n'
-        '    volume_spike: "Volume",\n'
-        '    strong_candle_close: "Candle",\n'
-        '    option_chain_support: "Chain",\n'
-        '    oi_buildup: "OI",\n'
-        '    atr_volatility: "ATR",\n'
-        '  };\n'
-        '  return Object.entries(components)\n'
-        '    .filter(([, value]) => value && typeof value === "object")\n'
-        '    .map(([key, value]) => ({\n'
-        '      key,\n'
-        '      label: labels[key] || shortRegime(key),\n'
-        '      score: Number(value.score || 0),\n'
-        '      weight: Number(value.weight || 0),\n'
-        '    }));\n'
-        '}\n\n'
-        'function formatBacktestReport(report) {\n',
-    )
-
-text = replace_once(
-    text,
-    'function SmallButton({ title, onPress, green, red, blue }) {\n'
-    '  return (\n'
-    '    <TouchableOpacity\n'
-    '      style={[styles.button, green && styles.greenButton, red && styles.redButton, blue && styles.blueButton]}\n'
-    '      onPress={onPress}\n'
-    '    >\n'
-    '      <Text style={styles.buttonText}>{title}</Text>\n'
-    '    </TouchableOpacity>\n'
-    '  );\n'
-    '}',
-    'function SmallButton({ title, onPress, green, red, blue }) {\n'
-    '  const colored = Boolean(green || blue);\n'
-    '  return (\n'
-    '    <TouchableOpacity\n'
-    '      activeOpacity={0.72}\n'
-    '      style={[styles.button, green && styles.greenButton, red && styles.redButton, blue && styles.blueButton]}\n'
-    '      onPress={onPress}\n'
-    '    >\n'
-    '      <Text style={[styles.buttonText, colored && styles.buttonTextDark, red && styles.buttonTextLight]}>{title}</Text>\n'
-    '    </TouchableOpacity>\n'
-    '  );\n'
-    '}',
-)
-
-if "function AiDecisionCard" not in text:
-    text = replace_once(
-        text,
-        'function SmallButton({ title, onPress, green, red, blue }) {\n',
-        'function AiDecisionCard({ status }) {\n'
-        '  const decision = status?.weighted_decision_engine || {};\n'
-        '  const gemini = status?.gemini_decision && Object.keys(status.gemini_decision).length ? status.gemini_decision : decision.gemini_decision || {};\n'
-        '  const suggestion = status?.suggestion || {};\n'
-        '  const score = Number(status?.weighted_score ?? decision.score ?? suggestion.weighted_score ?? status?.score ?? 0);\n'
-        '  const confidence = Number(gemini.confidence ?? decision.confidence ?? suggestion.confidence ?? status?.confidence ?? 0);\n'
-        '  const fake = Number(status?.fake_breakout_probability ?? gemini.fake_breakout_probability ?? decision.fake_breakout_probability ?? suggestion.fake_breakout_probability ?? 0);\n'
-        '  const entryType = gemini.entry_type || decision.entry_type || suggestion.entry_type || "NONE";\n'
-        '  const risk = gemini.risk || decision.risk || suggestion.risk || "--";\n'
-        '  const signal = gemini.signal || decision.signal || suggestion.signal || status?.signal || "WAIT";\n'
-        '  const regime = status?.market_regime || decision.market_regime || suggestion.market_regime?.regime || suggestion.market_regime || "--";\n'
-        '  const reason = gemini.reason || decision.reason || suggestion.reason || "Waiting for market data";\n'
-        '  const componentRows = weightedComponentRows(decision.components || suggestion.weighted_components || {});\n'
-        '  const scorePct = Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));\n'
-        '  const confidencePct = Math.max(0, Math.min(100, Number.isFinite(confidence) ? confidence : 0));\n'
-        '  const fakePct = Math.max(0, Math.min(100, Number.isFinite(fake) ? fake : 0));\n'
-        '  const takeTrade = Boolean(gemini.take_trade || (signal !== "WAIT" && confidencePct > 75));\n\n'
-        '  return (\n'
-        '    <View style={styles.aiPanel}>\n'
-        '      <View style={styles.panelHeaderRow}>\n'
-        '        <View style={styles.modeTextBlock}>\n'
-        '          <Text style={styles.panelTitle}>AI Decision Center</Text>\n'
-        '          <Text style={styles.aiSubTitle}>{shortRegime(regime)} | {entryType} | {risk}</Text>\n'
-        '        </View>\n'
-        '        <Text style={[styles.modePill, takeTrade ? styles.modePillGood : styles.modePillBad]}>{signal}</Text>\n'
-        '      </View>\n'
-        '      <View style={styles.aiMetricRow}>\n'
-        '        <AiMetric label="Weighted" value={`${scorePct.toFixed(0)}/100`} good={scorePct >= 70} />\n'
-        '        <AiMetric label="Confidence" value={`${confidencePct.toFixed(0)}%`} good={confidencePct > 75} />\n'
-        '        <AiMetric label="Fake Risk" value={`${fakePct.toFixed(0)}%`} bad={fakePct > 42} />\n'
-        '      </View>\n'
-        '      <ProgressLine label="Score" value={scorePct} good={scorePct >= 70} />\n'
-        '      <ProgressLine label="Confidence" value={confidencePct} good={confidencePct > 75} />\n'
-        '      <ProgressLine label="Fake Breakout" value={fakePct} bad={fakePct > 42} />\n'
-        '      <Text style={styles.aiReason}>{reason}</Text>\n'
-        '      {componentRows.length ? (\n'
-        '        <View style={styles.componentGrid}>\n'
-        '          {componentRows.map((item) => (\n'
-        '            <View key={item.key} style={styles.componentChip}>\n'
-        '              <Text style={styles.componentLabel}>{item.label}</Text>\n'
-        '              <Text style={styles.componentScore}>{item.score}/{item.weight}</Text>\n'
-        '            </View>\n'
-        '          ))}\n'
-        '        </View>\n'
-        '      ) : (\n'
-        '        <Text style={styles.connectionHelp}>Component scores will appear after the next live market decision.</Text>\n'
-        '      )}\n'
-        '    </View>\n'
-        '  );\n'
-        '}\n\n'
-        'function AiMetric({ label, value, good, bad }) {\n'
-        '  return (\n'
-        '    <View style={styles.aiMetric}>\n'
-        '      <Text style={styles.metricLabel}>{label}</Text>\n'
-        '      <Text style={[styles.aiMetricValue, good && styles.good, bad && styles.bad]}>{value}</Text>\n'
-        '    </View>\n'
-        '  );\n'
-        '}\n\n'
-        'function ProgressLine({ label, value, good, bad }) {\n'
-        '  const pct = Math.max(0, Math.min(100, Number(value || 0)));\n'
-        '  return (\n'
-        '    <View style={styles.progressWrap}>\n'
-        '      <View style={styles.progressHeader}>\n'
-        '        <Text style={styles.progressLabel}>{label}</Text>\n'
-        '        <Text style={styles.progressValue}>{pct.toFixed(0)}%</Text>\n'
-        '      </View>\n'
-        '      <View style={styles.progressTrack}>\n'
-        '        <View style={[styles.progressFill, { width: `${pct}%` }, good && styles.progressGood, bad && styles.progressBad]} />\n'
-        '      </View>\n'
-        '    </View>\n'
-        '  );\n'
-        '}\n\n'
-        'function SmallButton({ title, onPress, green, red, blue }) {\n',
-    )
-
-text = replace_once(
-    text,
-    """              <View style={styles.modeSwitchBox}>
-                <View>
-                  <Text style={styles.bodyStrong}>Trading Mode: {tradeMode}</Text>
-                  <Text style={styles.connectionHelp}>LIVE sends real Angel One orders. Keep OFF for testing.</Text>
-                </View>
-                <Switch
-                  value={tradeMode === "LIVE" && liveTradingEnabled}
-                  onValueChange={(value) => {
-                    setTradeMode(value ? "LIVE" : "PAPER");
-                    setLiveTradingEnabled(value);
-                    updateTradeMode(value ? "LIVE" : "PAPER", value);
-                  }}
-                  trackColor={{ false: "#334155", true: "#7f1d1d" }}
-                  thumbColor={tradeMode === "LIVE" && liveTradingEnabled ? "#ff5c7a" : "#94a3b8"}
-                />
-              </View>""",
-    """              <View style={styles.modeSwitchBox}>
-                <View style={styles.modeSwitchHeader}>
-                  <View style={styles.modeTextBlock}>
-                    <Text style={styles.bodyStrong}>Trading Mode: {tradeMode}</Text>
-                    <Text style={styles.connectionHelp}>LIVE sends real Angel One orders. Keep OFF for testing.</Text>
-                  </View>
-                  <Text style={[styles.modePill, tradeMode === "LIVE" && liveTradingEnabled ? styles.modePillBad : styles.modePillGood]}>
-                    {tradeMode === "LIVE" && liveTradingEnabled ? "LIVE ON" : "PAPER SAFE"}
-                  </Text>
-                </View>
-                <View style={styles.liveSwitchRow}>
-                  <View style={styles.modeTextBlock}>
-                    <Text style={styles.autoText}>Live Trading</Text>
-                    <Text style={styles.connectionHelp}>Manual confirmation required before real orders.</Text>
-                  </View>
-                  <Switch
-                    value={tradeMode === "LIVE" && liveTradingEnabled}
-                    onValueChange={(value) => {
-                      setTradeMode(value ? "LIVE" : "PAPER");
-                      setLiveTradingEnabled(value);
-                      updateTradeMode(value ? "LIVE" : "PAPER", value);
-                    }}
-                    trackColor={{ false: "#334155", true: "#7f1d1d" }}
-                    thumbColor={tradeMode === "LIVE" && liveTradingEnabled ? "#ff5c7a" : "#94a3b8"}
-                  />
-                </View>
-              </View>""",
-)
-
-text = replace_once(
-    text,
-    """            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Controls</Text>
-              <View style={styles.row}>
-                <SmallButton title="Start" onPress={() => postJson("/start", {}, "Start")} green />
-                <SmallButton title="Stop" onPress={() => postJson("/stop", {}, "Stop")} red />
-                <SmallButton title="Scan" onPress={() => postJson("/scan", {}, "Scan")} blue />
-              </View>
-              <View style={styles.spacer} />
-              <View style={styles.row}>
-                <SmallButton title="Close Pos" onPress={() => postJson("/close-position", {}, "Close position")} red />
-                <SmallButton title="Refresh" onPress={() => refreshAll(true)} blue />
-              </View>
-              <View style={styles.spacer} />
-              <SmallButton title="Send Health Alert" onPress={() => postJson("/health-test", {}, "Health alert")} />
-            </View>""",
-    """            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Controls</Text>
-              <View style={styles.modeSwitchBox}>
-                <View style={styles.modeSwitchHeader}>
-                  <View style={styles.modeTextBlock}>
-                    <Text style={styles.bodyStrong}>Trading Mode: {tradeMode}</Text>
-                    <Text style={styles.connectionHelp}>LIVE sends real Angel One orders. Keep OFF for testing.</Text>
-                  </View>
-                  <Text style={[styles.modePill, tradeMode === "LIVE" && liveTradingEnabled ? styles.modePillBad : styles.modePillGood]}>
-                    {tradeMode === "LIVE" && liveTradingEnabled ? "LIVE ON" : "PAPER SAFE"}
-                  </Text>
-                </View>
-                <View style={styles.liveSwitchRow}>
-                  <View style={styles.modeTextBlock}>
-                    <Text style={styles.autoText}>Live Trading</Text>
-                    <Text style={styles.connectionHelp}>Manual confirmation required before real orders.</Text>
-                  </View>
-                  <Switch
-                    value={tradeMode === "LIVE" && liveTradingEnabled}
-                    onValueChange={(value) => {
-                      setTradeMode(value ? "LIVE" : "PAPER");
-                      setLiveTradingEnabled(value);
-                      updateTradeMode(value ? "LIVE" : "PAPER", value);
-                    }}
-                    trackColor={{ false: "#334155", true: "#7f1d1d" }}
-                    thumbColor={tradeMode === "LIVE" && liveTradingEnabled ? "#ff5c7a" : "#94a3b8"}
-                  />
-                </View>
-              </View>
-              <View style={styles.spacer} />
-              <View style={styles.row}>
-                <SmallButton title="Start" onPress={() => postJson("/start", {}, "Start")} green />
-                <SmallButton title="Stop" onPress={() => postJson("/stop", {}, "Stop")} red />
-                <SmallButton title="Scan" onPress={() => postJson("/scan", {}, "Scan")} blue />
-              </View>
-              <View style={styles.spacer} />
-              <View style={styles.row}>
-                <SmallButton title="Close Pos" onPress={() => postJson("/close-position", {}, "Close position")} red />
-                <SmallButton title="Refresh" onPress={() => refreshAll(true)} blue />
-              </View>
-              <View style={styles.spacer} />
-              <SmallButton title="Send Health Alert" onPress={() => postJson("/health-test", {}, "Health alert")} />
-            </View>""",
-)
-
-text = replace_once(
-    text,
-    """              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>{trimText(infoPanels[activeInfo], activeInfo === "reports" ? 500 : 90)}</Text>
-              </View>""",
-    """              <View style={styles.infoBox}>
-                <ScrollView style={styles.infoScroll} nestedScrollEnabled showsVerticalScrollIndicator>
-                  <Text style={styles.infoText}>{trimText(infoPanels[activeInfo], activeInfo === "reports" ? 500 : 140)}</Text>
-                </ScrollView>
-              </View>""",
-)
-
-text = replace_once(
-    text,
-    """            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Live Logs</Text>
-              {logs.slice(-18).reverse().map((line, index) => (
-                <Text key={`${line}-${index}`} style={styles.logLine}>{line}</Text>
-              ))}
-              {logs.length === 0 ? <Text style={styles.body}>No logs yet</Text> : null}
-            </View>""",
-    """            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Live Logs</Text>
-              <ScrollView style={styles.logScroll} nestedScrollEnabled showsVerticalScrollIndicator>
-                {logs.slice(-80).reverse().map((line, index) => (
-                  <Text key={`${line}-${index}`} style={styles.logLine}>{line}</Text>
-                ))}
-                {logs.length === 0 ? <Text style={styles.body}>No logs yet</Text> : null}
-              </ScrollView>
-            </View>""",
-)
-
-style_replacements = {
-    '  button: { flex: 1, backgroundColor: "#16263f", borderRadius: 8, paddingVertical: 12, alignItems: "center" },':
-        '  button: { flex: 1, backgroundColor: "#213656", borderColor: "#3f5f8d", borderRadius: 8, borderWidth: 1, paddingVertical: 12, alignItems: "center" },',
-    '  greenButton: { backgroundColor: "#2ee59d" },':
-        '  greenButton: { backgroundColor: "#2ee59d", borderColor: "#2ee59d" },',
-    '  redButton: { backgroundColor: "#ff5c7a" },':
-        '  redButton: { backgroundColor: "#ff5c7a", borderColor: "#ff5c7a" },',
-    '  blueButton: { backgroundColor: "#55c7ff" },':
-        '  blueButton: { backgroundColor: "#55c7ff", borderColor: "#55c7ff" },',
-    '  buttonText: { color: "#06111f", fontWeight: "900", fontSize: 14 },':
-        '  buttonText: { color: "#f8fafc", fontWeight: "900", fontSize: 14 },\n'
-        '  buttonTextDark: { color: "#06111f" },\n'
-        '  buttonTextLight: { color: "#ffffff" },',
-    '  modeSwitchBox: { alignItems: "center", backgroundColor: "#08111f", borderColor: "#2f4363", borderRadius: 8, borderWidth: 1, flexDirection: "row", gap: 10, justifyContent: "space-between", padding: 10 },':
-        '  modeSwitchBox: { alignItems: "stretch", backgroundColor: "#08111f", borderColor: "#2f4363", borderRadius: 8, borderWidth: 1, gap: 10, padding: 12 },\n'
-        '  modeSwitchHeader: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },\n'
-        '  modeTextBlock: { flex: 1, minWidth: 0 },\n'
-        '  liveSwitchRow: { alignItems: "center", backgroundColor: "#0d1b2e", borderColor: "#263954", borderRadius: 8, borderWidth: 1, flexDirection: "row", gap: 10, justifyContent: "space-between", paddingHorizontal: 10, paddingVertical: 9 },',
-    '  infoBox: { backgroundColor: "#08111f", borderColor: "#2f4363", borderRadius: 8, borderWidth: 1, marginTop: 10, maxHeight: 520, padding: 10 },':
-        '  infoBox: { backgroundColor: "#08111f", borderColor: "#2f4363", borderRadius: 8, borderWidth: 1, marginTop: 10, padding: 10 },\n'
-        '  infoScroll: { maxHeight: 330 },\n'
-        '  logScroll: { backgroundColor: "#08111f", borderColor: "#2f4363", borderRadius: 8, borderWidth: 1, maxHeight: 360, padding: 10 },',
-}
-for old, new in style_replacements.items():
-    text = replace_once(text, old, new)
-
-if "  modeSwitchHeader: {" not in text:
-    text = replace_once(
-        text,
-        '  autoRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },\n'
-        '  autoText: { color: "#f8fafc", fontSize: 14, fontWeight: "800" },',
-        '  autoRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },\n'
-        '  modeSwitchBox: { alignItems: "stretch", backgroundColor: "#08111f", borderColor: "#2f4363", borderRadius: 8, borderWidth: 1, gap: 10, padding: 12 },\n'
-        '  modeSwitchHeader: { alignItems: "flex-start", flexDirection: "row", gap: 10, justifyContent: "space-between" },\n'
-        '  modeTextBlock: { flex: 1, minWidth: 0 },\n'
-        '  liveSwitchRow: { alignItems: "center", backgroundColor: "#0d1b2e", borderColor: "#263954", borderRadius: 8, borderWidth: 1, flexDirection: "row", gap: 10, justifyContent: "space-between", paddingHorizontal: 10, paddingVertical: 9 },\n'
-        '  autoText: { color: "#f8fafc", fontSize: 14, fontWeight: "800" },',
-    )
-
-if "  aiPanel: {" not in text:
-    text = replace_once(
-        text,
-        '  panel: { backgroundColor: "#101b2d", borderColor: "#2f4363", borderWidth: 1, borderRadius: 8, padding: 14 },\n',
-        '  panel: { backgroundColor: "#101b2d", borderColor: "#2f4363", borderWidth: 1, borderRadius: 8, padding: 14 },\n'
-        '  aiPanel: { backgroundColor: "#0d1b2e", borderColor: "#55c7ff", borderWidth: 1, borderRadius: 8, padding: 14 },\n',
-    )
-
-if "  aiMetricRow: {" not in text:
-    text = replace_once(
-        text,
-        '  metricValue: { color: "#f8fafc", fontSize: 12, fontWeight: "900", marginTop: 3 },\n',
-        '  metricValue: { color: "#f8fafc", fontSize: 12, fontWeight: "900", marginTop: 3 },\n'
-        '  aiSubTitle: { color: "#94a3b8", fontSize: 11, fontWeight: "900", marginTop: -6 },\n'
-        '  aiMetricRow: { flexDirection: "row", gap: 8, marginBottom: 10 },\n'
-        '  aiMetric: { backgroundColor: "#08111f", borderColor: "#263954", borderRadius: 7, borderWidth: 1, flex: 1, paddingHorizontal: 8, paddingVertical: 9 },\n'
-        '  aiMetricValue: { color: "#f8fafc", fontSize: 16, fontWeight: "900", marginTop: 4 },\n'
-        '  progressWrap: { marginTop: 8 },\n'
-        '  progressHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 },\n'
-        '  progressLabel: { color: "#cbd5e1", fontSize: 11, fontWeight: "900" },\n'
-        '  progressValue: { color: "#94a3b8", fontSize: 11, fontWeight: "900" },\n'
-        '  progressTrack: { backgroundColor: "#08111f", borderColor: "#263954", borderRadius: 999, borderWidth: 1, height: 10, overflow: "hidden" },\n'
-        '  progressFill: { backgroundColor: "#55c7ff", borderRadius: 999, height: "100%" },\n'
-        '  progressGood: { backgroundColor: "#2ee59d" },\n'
-        '  progressBad: { backgroundColor: "#ff5c7a" },\n'
-        '  aiReason: { backgroundColor: "#08111f", borderColor: "#263954", borderRadius: 7, borderWidth: 1, color: "#dbeafe", fontSize: 12, fontWeight: "800", lineHeight: 18, marginTop: 12, padding: 9 },\n'
-        '  componentGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },\n'
-        '  componentChip: { backgroundColor: "#16263f", borderColor: "#2f4363", borderRadius: 7, borderWidth: 1, minWidth: "30%", paddingHorizontal: 9, paddingVertical: 8 },\n'
-        '  componentLabel: { color: "#94a3b8", fontSize: 10, fontWeight: "900" },\n'
-        '  componentScore: { color: "#f8fafc", fontSize: 13, fontWeight: "900", marginTop: 3 },\n',
-    )
-
-app_path.write_text(text, encoding="utf-8")
-
-app_json_path = Path("app.json")
-app_json = json.loads(app_json_path.read_text(encoding="utf-8"))
-android = app_json.setdefault("expo", {}).setdefault("android", {})
-android["versionCode"] = max(int(android.get("versionCode", 0) or 0), MIN_VERSION_CODE)
-app_json_path.write_text(json.dumps(app_json, indent=2) + "\n", encoding="utf-8")
-
-eas_json_path = Path("eas.json")
-if eas_json_path.exists():
+def update_eas_json():
+    eas_json_path = Path("eas.json")
+    if not eas_json_path.exists():
+        eas_json_path.write_text(json.dumps({"cli": {"version": ">= 18.9.1", "appVersionSource": "local"}, "build": {"development": {"developmentClient": True, "distribution": "internal"}, "preview": {"distribution": "internal", "autoIncrement": True}, "production": {"autoIncrement": True}}, "submit": {"production": {}}}, indent=2) + "\n", encoding="utf-8")
+        return
     eas_json = json.loads(eas_json_path.read_text(encoding="utf-8"))
     eas_json.setdefault("cli", {})["appVersionSource"] = "local"
     eas_json_path.write_text(json.dumps(eas_json, indent=2) + "\n", encoding="utf-8")
 
-print("Mobile hotfix applied")
+
+write_verified_app_js()
+update_app_json()
+update_eas_json()
+print("Mobile hotfix applied: bundled build 18 UI")
