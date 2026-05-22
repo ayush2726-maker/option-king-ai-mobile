@@ -1,4 +1,4 @@
-name: Build Android Debug APK
+name: Build Android APK
 
 on:
   push:
@@ -7,42 +7,31 @@ on:
     paths:
       - App.js
       - app.json
-      - eas.json
       - package.json
       - package-lock.json
       - .github/workflows/android-apk.yml
       - .github/scripts/mobile_hotfix.py
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: APK build type
-        required: true
-        default: debug-apk
-        type: choice
-        options:
-          - debug-apk
-          - eas-local-signed
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-debug-apk-${{ github.ref }}
+  group: android-apk-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  debug-apk:
-    if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}
+  build-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply mobile UI hotfix
+      - name: Apply verified mobile UI
         run: python3 .github/scripts/mobile_hotfix.py
 
-      - name: Verify mobile UI hotfix
+      - name: Verify build 18 UI before APK
         run: |
           node --check App.js
           grep -q '1.0.0 build 18' App.js
@@ -52,6 +41,7 @@ jobs:
           grep -q 'logScroll' App.js
           grep -q 'modeSwitchHeader' App.js
           grep -q 'PAPER SAFE' App.js
+          grep -q 'mode === "MONTHLY" ? "MONTHLY" : mode' App.js
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -71,7 +61,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate native Android project
+      - name: Generate Android project
         env:
           CI: true
           EXPO_NO_TELEMETRY: 1
@@ -83,76 +73,9 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Rename APK
-        run: |
-          mkdir -p artifacts
-          cp android/app/build/outputs/apk/debug/app-debug.apk "artifacts/OptionKingAI-Mobile-debug-${{ github.run_number }}.apk"
-
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OptionKingAI-Mobile-debug-apk
-          path: artifacts/*.apk
-          retention-days: 14
-
-  eas-local-signed:
-    if: ${{ inputs.build_type == 'eas-local-signed' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-      EAS_NO_VCS: 1
-      EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
-      EXPO_NO_TELEMETRY: 1
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Apply mobile UI hotfix
-        run: python3 .github/scripts/mobile_hotfix.py
-
-      - name: Verify mobile UI hotfix
-        run: |
-          node --check App.js
-          grep -q '1.0.0 build 18' App.js
-          grep -q 'AI Decision Center' App.js
-          grep -q 'AiDecisionCard status={status}' App.js
-          grep -q 'infoScroll' App.js
-          grep -q 'logScroll' App.js
-          grep -q 'modeSwitchHeader' App.js
-          grep -q 'PAPER SAFE' App.js
-
-      - name: Require EXPO_TOKEN
-        run: |
-          if [ -z "$EXPO_TOKEN" ]; then
-            echo "Set repository secret EXPO_TOKEN to run signed EAS local builds."
-            exit 1
-          fi
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build signed preview APK locally with EAS
-        run: npx eas-cli build --platform android --profile preview --local --non-interactive --output ./OptionKingAI-Mobile-signed-preview.apk
-
-      - name: Upload signed APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: OptionKingAI-Mobile-signed-preview-apk
-          path: OptionKingAI-Mobile-signed-preview.apk
+          name: OptionKingAI-Mobile-build18-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
