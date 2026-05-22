@@ -44,7 +44,8 @@ jobs:
         run: |
           grep -q "build 16" App.js
           grep -q "AI Decision Center" App.js
-          grep -q "Weighted Score" App.js
+          grep -q "AI Score" App.js
+          grep -q "Weighted" App.js
 
       - name: Generate app icons
         run: |
