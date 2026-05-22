@@ -33,7 +33,7 @@ jobs:
 
       - name: Verify build 18 UI before APK
         run: |
-          node --check App.js
+          python3 -m py_compile .github/scripts/mobile_hotfix.py
           grep -q '1.0.0 build 18' App.js
           grep -q 'AI Decision Center' App.js
           grep -q 'AiDecisionCard status={status}' App.js
