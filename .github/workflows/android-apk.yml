@@ -116,15 +116,16 @@ jobs:
           EXPO_NO_TELEMETRY: 1
         run: npx expo prebuild --platform android --clean --npm
 
-      - name: Build debug APK
+      - name: Build release APK with bundled JS
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          find app/build/outputs/apk -type f -name "*.apk" -print
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OptionKingAI-Mobile-build18-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: OptionKingAI-Mobile-build18-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 14
