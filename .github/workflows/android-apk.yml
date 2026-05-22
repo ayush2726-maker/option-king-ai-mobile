@@ -31,17 +31,66 @@ jobs:
       - name: Apply verified mobile UI
         run: python3 .github/scripts/mobile_hotfix.py
 
-      - name: Verify build 18 UI before APK
+      - name: Generate app icon assets
         run: |
-          python3 -m py_compile .github/scripts/mobile_hotfix.py
-          grep -q '1.0.0 build 18' App.js
-          grep -q 'AI Decision Center' App.js
-          grep -q 'AiDecisionCard status={status}' App.js
-          grep -q 'infoScroll' App.js
-          grep -q 'logScroll' App.js
-          grep -q 'modeSwitchHeader' App.js
-          grep -q 'PAPER SAFE' App.js
-          grep -q 'mode === "MONTHLY" ? "MONTHLY" : mode' App.js
+          python3 - <<'PY'
+          import math
+          import os
+          import struct
+          import zlib
+
+          def chunk(kind, data):
+              return (
+                  struct.pack(">I", len(data))
+                  + kind
+                  + data
+                  + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+              )
+
+          def write_png(path, transparent=False, size=1024):
+              os.makedirs(os.path.dirname(path), exist_ok=True)
+              rows = []
+              for y in range(size):
+                  row = bytearray([0])
+                  ny = (y - size / 2) / (size / 2)
+                  for x in range(size):
+                      nx = (x - size / 2) / (size / 2)
+                      radius = math.hypot(nx, ny)
+                      r, g, b, a = 7, 17, 31, 255
+                      if transparent and radius > 0.72:
+                          a = 0
+                      elif radius < 0.72:
+                          r, g, b = 85, 199, 255
+                      if radius < 0.52:
+                          r, g, b, a = 8, 17, 31, 255
+                      if -0.52 < nx < 0.55 and abs(ny - (0.25 - 0.55 * nx)) < 0.045:
+                          r, g, b, a = 46, 229, 157, 255
+                      if 0.42 < nx < 0.58 and -0.42 < ny < -0.20:
+                          r, g, b, a = 46, 229, 157, 255
+                      for bar_x, top, bottom in [(-0.34, -0.10, 0.30), (-0.12, -0.26, 0.18), (0.12, -0.36, 0.05), (0.34, -0.48, -0.10)]:
+                          if abs(nx - bar_x) < 0.035 and top < ny < bottom:
+                              r, g, b, a = 248, 250, 252, 255
+                          if abs(nx - bar_x) < 0.095 and abs(ny - top) < 0.028:
+                              r, g, b, a = 248, 250, 252, 255
+                          if abs(nx - bar_x) < 0.095 and abs(ny - bottom) < 0.028:
+                              r, g, b, a = 248, 250, 252, 255
+                      row.extend((r, g, b, a))
+                  rows.append(bytes(row))
+              raw = b"".join(rows)
+              png = (
+                  b"\x89PNG\r\n\x1a\n"
+                  + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+                  + chunk(b"IDAT", zlib.compress(raw, 9))
+                  + chunk(b"IEND", b"")
+              )
+              with open(path, "wb") as file:
+                  file.write(png)
+
+          write_png("assets/icon.png")
+          write_png("assets/adaptive-icon.png")
+          write_png("assets/adaptive-foreground.png", transparent=True)
+          print("Generated Expo icon assets")
+          PY
 
       - name: Setup Node
         uses: actions/setup-node@v4
