@@ -42,6 +42,17 @@ jobs:
       - name: Apply mobile UI hotfix
         run: python3 .github/scripts/mobile_hotfix.py
 
+      - name: Verify mobile UI hotfix
+        run: |
+          node --check App.js
+          grep -q '1.0.0 build 18' App.js
+          grep -q 'AI Decision Center' App.js
+          grep -q 'AiDecisionCard status={status}' App.js
+          grep -q 'infoScroll' App.js
+          grep -q 'logScroll' App.js
+          grep -q 'modeSwitchHeader' App.js
+          grep -q 'PAPER SAFE' App.js
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -99,6 +110,17 @@ jobs:
 
       - name: Apply mobile UI hotfix
         run: python3 .github/scripts/mobile_hotfix.py
+
+      - name: Verify mobile UI hotfix
+        run: |
+          node --check App.js
+          grep -q '1.0.0 build 18' App.js
+          grep -q 'AI Decision Center' App.js
+          grep -q 'AiDecisionCard status={status}' App.js
+          grep -q 'infoScroll' App.js
+          grep -q 'logScroll' App.js
+          grep -q 'modeSwitchHeader' App.js
+          grep -q 'PAPER SAFE' App.js
 
       - name: Require EXPO_TOKEN
         run: |
