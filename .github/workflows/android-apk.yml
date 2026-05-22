@@ -1,6 +1,17 @@
 name: Build Android APK
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - App.js
+      - app.json
+      - eas.json
+      - package.json
+      - package-lock.json
+      - .github/workflows/android-apk.yml
+      - .github/scripts/mobile_hotfix.py
   workflow_dispatch:
     inputs:
       build_type:
@@ -17,7 +28,7 @@ permissions:
 
 jobs:
   debug-apk:
-    if: ${{ inputs.build_type == 'debug-apk' }}
+    if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
