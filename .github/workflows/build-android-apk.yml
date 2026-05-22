@@ -37,6 +37,15 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Inject weighted Gemini mobile UI
+        run: python scripts/replace_app_js.py
+
+      - name: Validate injected mobile source
+        run: |
+          grep -q "build 16" App.js
+          grep -q "AI Decision Center" App.js
+          grep -q "Weighted Score" App.js
+
       - name: Generate app icons
         run: |
           python - <<'PY'
