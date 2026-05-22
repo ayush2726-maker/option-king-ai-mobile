@@ -1,0 +1,121 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: APK build type
+        required: true
+        default: debug-apk
+        type: choice
+        options:
+          - debug-apk
+          - eas-local-signed
+
+permissions:
+  contents: read
+
+jobs:
+  debug-apk:
+    if: ${{ inputs.build_type == 'debug-apk' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply mobile UI hotfix
+        run: python3 .github/scripts/mobile_hotfix.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native Android project
+        env:
+          CI: true
+          EXPO_NO_TELEMETRY: 1
+        run: npx expo prebuild --platform android --clean --npm
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: |
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/debug/app-debug.apk "artifacts/OptionKingAI-Mobile-debug-${{ github.run_number }}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OptionKingAI-Mobile-debug-apk
+          path: artifacts/*.apk
+          retention-days: 14
+
+  eas-local-signed:
+    if: ${{ inputs.build_type == 'eas-local-signed' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_NO_VCS: 1
+      EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
+      EXPO_NO_TELEMETRY: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply mobile UI hotfix
+        run: python3 .github/scripts/mobile_hotfix.py
+
+      - name: Require EXPO_TOKEN
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "Set repository secret EXPO_TOKEN to run signed EAS local builds."
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build signed preview APK locally with EAS
+        run: npx eas-cli build --platform android --profile preview --local --non-interactive --output ./OptionKingAI-Mobile-signed-preview.apk
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OptionKingAI-Mobile-signed-preview-apk
+          path: OptionKingAI-Mobile-signed-preview.apk
+          retention-days: 14
