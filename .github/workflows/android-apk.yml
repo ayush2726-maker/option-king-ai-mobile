@@ -116,6 +116,26 @@ jobs:
           EXPO_NO_TELEMETRY: 1
         run: npx expo prebuild --platform android --clean --npm
 
+      - name: Force installable release signing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          build_gradle = Path("android/app/build.gradle")
+          text = build_gradle.read_text(encoding="utf-8")
+          marker = "release {\n"
+          start = text.find(marker)
+          if start != -1:
+              end = text.find("\n        }", start + len(marker))
+              block = text[start:end if end != -1 else len(text)]
+              if "signingConfig signingConfigs.debug" not in block:
+                  text = text[:start] + marker + "            signingConfig signingConfigs.debug\n" + text[start + len(marker):]
+                  build_gradle.write_text(text, encoding="utf-8")
+                  print("Release APK will use debug signing config")
+              else:
+                  print("Release signing config already present")
+          PY
+
       - name: Build release APK with bundled JS
         run: |
           cd android
