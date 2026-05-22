@@ -11,6 +11,7 @@ on:
       - package-lock.json
       - .github/workflows/android-apk.yml
       - .github/scripts/mobile_hotfix.py
+      - .github/assets/okai-tradex-icon.png.b64
   workflow_dispatch:
 
 permissions:
@@ -31,65 +32,35 @@ jobs:
       - name: Apply verified mobile UI
         run: python3 .github/scripts/mobile_hotfix.py
 
-      - name: Generate app icon assets
+      - name: Apply OKAI TradeX branding and icon
         run: |
           python3 - <<'PY'
-          import math
-          import os
-          import struct
-          import zlib
+          import base64
+          import json
+          from pathlib import Path
 
-          def chunk(kind, data):
-              return (
-                  struct.pack(">I", len(data))
-                  + kind
-                  + data
-                  + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-              )
+          app_js = Path("App.js")
+          text = app_js.read_text(encoding="utf-8")
+          text = text.replace("Option King AI", "OKAI TradeX")
+          text = text.replace("OptionKing", "OKAI TradeX")
+          text = text.replace("option king", "OKAI TradeX")
+          app_js.write_text(text, encoding="utf-8")
 
-          def write_png(path, transparent=False, size=1024):
-              os.makedirs(os.path.dirname(path), exist_ok=True)
-              rows = []
-              for y in range(size):
-                  row = bytearray([0])
-                  ny = (y - size / 2) / (size / 2)
-                  for x in range(size):
-                      nx = (x - size / 2) / (size / 2)
-                      radius = math.hypot(nx, ny)
-                      r, g, b, a = 7, 17, 31, 255
-                      if transparent and radius > 0.72:
-                          a = 0
-                      elif radius < 0.72:
-                          r, g, b = 85, 199, 255
-                      if radius < 0.52:
-                          r, g, b, a = 8, 17, 31, 255
-                      if -0.52 < nx < 0.55 and abs(ny - (0.25 - 0.55 * nx)) < 0.045:
-                          r, g, b, a = 46, 229, 157, 255
-                      if 0.42 < nx < 0.58 and -0.42 < ny < -0.20:
-                          r, g, b, a = 46, 229, 157, 255
-                      for bar_x, top, bottom in [(-0.34, -0.10, 0.30), (-0.12, -0.26, 0.18), (0.12, -0.36, 0.05), (0.34, -0.48, -0.10)]:
-                          if abs(nx - bar_x) < 0.035 and top < ny < bottom:
-                              r, g, b, a = 248, 250, 252, 255
-                          if abs(nx - bar_x) < 0.095 and abs(ny - top) < 0.028:
-                              r, g, b, a = 248, 250, 252, 255
-                          if abs(nx - bar_x) < 0.095 and abs(ny - bottom) < 0.028:
-                              r, g, b, a = 248, 250, 252, 255
-                      row.extend((r, g, b, a))
-                  rows.append(bytes(row))
-              raw = b"".join(rows)
-              png = (
-                  b"\x89PNG\r\n\x1a\n"
-                  + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
-                  + chunk(b"IDAT", zlib.compress(raw, 9))
-                  + chunk(b"IEND", b"")
-              )
-              with open(path, "wb") as file:
-                  file.write(png)
+          app_json_path = Path("app.json")
+          app_json = json.loads(app_json_path.read_text(encoding="utf-8"))
+          expo = app_json.setdefault("expo", {})
+          expo["name"] = "OKAI TradeX"
+          expo["slug"] = "okai-tradex-mobile"
+          app_json_path.write_text(json.dumps(app_json, indent=2) + "\n", encoding="utf-8")
 
-          write_png("assets/icon.png")
-          write_png("assets/adaptive-icon.png")
-          write_png("assets/adaptive-foreground.png", transparent=True)
-          print("Generated Expo icon assets")
+          icon_b64_path = Path(".github/assets/okai-tradex-icon.png.b64")
+          icon_bytes = base64.b64decode(icon_b64_path.read_text(encoding="ascii"))
+          assets_dir = Path("assets")
+          assets_dir.mkdir(exist_ok=True)
+          for name in ("icon.png", "adaptive-icon.png", "adaptive-foreground.png"):
+              (assets_dir / name).write_bytes(icon_bytes)
+
+          print("Applied OKAI TradeX branding and launcher icon")
           PY
 
       - name: Setup Node
@@ -146,6 +117,6 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OptionKingAI-Mobile-build18-release-apk
+          name: OKAI-TradeX-Mobile-build18-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           retention-days: 14
