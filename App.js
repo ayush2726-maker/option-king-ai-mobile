@@ -318,10 +318,10 @@ export default function App() {
 
             <View style={styles.marketStrip}>
               <MarketItem label="NIFTY" value={number(status?.nifty)} />
-              <MarketItem label="Trend" value={status?.trend || "--"} />
-              <MarketItem label="Supertrend" value={status?.supertrend || "--"} />
+              <MarketItem label="Trend" value={status == null ? "Loading..." : (status?.trend || "Waiting first candle")} />
+              <MarketItem label="Supertrend" value={status == null ? "Loading..." : (status?.supertrend || "Waiting first candle")} />
               <MarketItem label="Signal" value={status?.signal || "WAIT"} />
-              <MarketItem label="Score" value={`${status?.score || 0}/5`} />
+              <MarketItem label="Score" value={status?.score != null ? `${status.score}/100` : "Loading..."} />
               <MarketItem label="Market" value={status?.market_open ? "OPEN" : "IDLE"} />
               <MarketItem label="End" value={status?.trade_end || status?.normal_trade_end || "--"} />
             </View>
@@ -369,14 +369,9 @@ export default function App() {
               <Text style={styles.body}>{formatPosition(status?.position)}</Text>
             </View>
 
-            <View style={styles.panel}>
-              <View style={styles.panelHeaderRow}>
-                <Text style={styles.panelTitle}>Trade Suggestion</Text>
-                <Text style={styles.modePill}>{status?.suggestion?.action || "WAIT"}</Text>
-              </View>
-              <Text style={styles.bodyStrong}>{status?.suggestion_summary || status?.suggestion?.summary || "WAIT | No setup"}</Text>
-              <Text style={styles.body}>{formatSuggestion(status?.suggestion)}</Text>
-            </View>
+            <AiDecisionCard status={status} />
+
+            <TradeSuggestionCard status={status} />
 
             <View style={styles.panel}>
               <Text style={styles.panelTitle}>Market Scan</Text>
@@ -384,7 +379,7 @@ export default function App() {
               {(scan?.results || []).slice(0, 4).map((item, index) => (
                 <View key={`${item.name}-${index}`} style={styles.scanRow}>
                   <Text style={styles.scanName}>{item.name}</Text>
-                  <Text style={styles.scanDetail}>Score {item.score}/5 | {item.detail}</Text>
+                  <Text style={styles.scanDetail}>Score {item.score}/100 | {item.detail}</Text>
                 </View>
               ))}
             </View>
@@ -559,6 +554,34 @@ function money(value) {
   return `Rs ${n.toFixed(2)}`;
 }
 
+// Safely render any value — prevents [object Object]
+function safeStr(value, fallback = "--") {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "object") {
+    // Try common text fields
+    const text = value.text || value.label || value.summary || value.value || value.name || value.reason;
+    if (text) return String(text);
+    try { return JSON.stringify(value); } catch { return fallback; }
+  }
+  return String(value);
+}
+
+// Confidence: never show 0%, show -- if not calculated
+function formatConfidence(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "--";
+  return `${Math.round(n)}%`;
+}
+
+// Format a reason list (array or string)
+function formatReasonList(reasons) {
+  if (!reasons) return "--";
+  if (Array.isArray(reasons)) {
+    return reasons.map((r, i) => `${i + 1}. ${safeStr(r)}`).join("\n");
+  }
+  return safeStr(reasons);
+}
+
 function number(value) {
   if (value === null || value === undefined || value === "") return "--";
   const n = Number(value);
@@ -578,7 +601,7 @@ function formatPosition(position) {
 function formatSuggestion(suggestion) {
   if (!suggestion) return "No suggestion yet. Press Scan or wait for next decision.";
   const lines = [
-    `Signal: ${suggestion.signal || "WAIT"} | Type: ${suggestion.trade_type || "NONE"} | Score: ${suggestion.score || 0}/5`,
+    `Signal: ${suggestion.signal || "WAIT"} | Type: ${suggestion.trade_type || "NONE"} | Score: ${suggestion.score != null ? suggestion.score : "--"}/100`,
     `Supertrend: ${suggestion.supertrend || "--"} ${suggestion.supertrend_value ? `@ ${number(suggestion.supertrend_value)}` : ""}`,
     `Reason: ${suggestion.reason || "--"}`,
   ];
@@ -697,6 +720,150 @@ function buildPnlChart(trades) {
     values,
     labels: [],
   };
+}
+
+function AiDecisionCard({ status }) {
+  const decision = status?.ai_decision || status?.last_ai_decision || {};
+  const suggestion = status?.suggestion || {};
+  const isLoading = status == null;
+
+  const decisionText   = safeStr(decision.decision   || suggestion.signal, isLoading ? "Loading..." : "WAIT");
+  const confidence     = formatConfidence(decision.confidence || suggestion.confidence);
+  const regime         = safeStr(decision.market_regime || status?.market_regime, isLoading ? "Loading..." : "Waiting first candle");
+  const trend          = safeStr(decision.trend || status?.trend, isLoading ? "Loading..." : "Waiting first candle");
+  const fakeRisk       = safeStr(decision.fake_risk || decision.fake_signal_risk, isLoading ? "Loading..." : "--");
+  const geminiStatus   = safeStr(decision.gemini_status || decision.gemini, isLoading ? "Loading..." : "--");
+  const recommendation = safeStr(decision.recommendation || suggestion.summary || status?.suggestion_summary, isLoading ? "Loading..." : "No recommendation yet");
+  const reasons        = formatReasonList(decision.reasons || decision.reason_list || decision.details);
+  const decisionColor  = decisionText === "BUY" ? styles.good : decisionText === "SELL" ? styles.bad : decisionText === "WAIT" ? styles.neutral : styles.neutral;
+
+  return (
+    <View style={styles.aiCard}>
+      <View style={styles.panelHeaderRow}>
+        <Text style={styles.panelTitle}>AI Decision Center</Text>
+        <View style={[styles.decisionBadge,
+          decisionText === "BUY"  ? styles.decisionBuy  :
+          decisionText === "SELL" ? styles.decisionSell :
+          styles.decisionWait]}>
+          <Text style={styles.decisionBadgeText}>{decisionText}</Text>
+        </View>
+      </View>
+
+      {/* Confidence + Regime row */}
+      <View style={styles.aiMetricRow}>
+        <View style={styles.aiMetricCell}>
+          <Text style={styles.aiMetricLabel}>Confidence</Text>
+          <Text style={[styles.aiMetricValue, confidence === "--" ? styles.neutral : styles.good]}>{confidence}</Text>
+        </View>
+        <View style={styles.aiMetricCell}>
+          <Text style={styles.aiMetricLabel}>Market Regime</Text>
+          <Text style={styles.aiMetricValue}>{regime}</Text>
+        </View>
+      </View>
+
+      {/* Trend + Fake Risk row */}
+      <View style={styles.aiMetricRow}>
+        <View style={styles.aiMetricCell}>
+          <Text style={styles.aiMetricLabel}>Trend</Text>
+          <Text style={styles.aiMetricValue}>{trend}</Text>
+        </View>
+        <View style={styles.aiMetricCell}>
+          <Text style={styles.aiMetricLabel}>Fake Risk</Text>
+          <Text style={[styles.aiMetricValue, fakeRisk === "HIGH" ? styles.bad : fakeRisk === "LOW" ? styles.good : styles.neutral]}>{fakeRisk}</Text>
+        </View>
+      </View>
+
+      {/* Gemini Status */}
+      <View style={styles.aiRow}>
+        <Text style={styles.aiRowLabel}>Gemini</Text>
+        <Text style={styles.aiRowValue}>{geminiStatus}</Text>
+      </View>
+
+      {/* Reason List */}
+      {reasons !== "--" ? (
+        <View style={styles.aiReasonBox}>
+          <Text style={styles.aiReasonTitle}>Analysis Details</Text>
+          <Text style={styles.aiReasonText}>{reasons}</Text>
+        </View>
+      ) : null}
+
+      {/* Recommendation */}
+      <View style={styles.aiRecommendBox}>
+        <Text style={styles.aiReasonTitle}>Recommendation</Text>
+        <Text style={styles.aiRecommendText}>{recommendation}</Text>
+      </View>
+    </View>
+  );
+}
+
+function TradeSuggestionCard({ status }) {
+  const s = status?.suggestion || {};
+  const isLoading = status == null;
+
+  const signal    = safeStr(s.signal, isLoading ? "Loading..." : "WAIT");
+  const entry     = s.premium    ? money(s.premium)    : isLoading ? "Loading..." : "--";
+  const sl        = s.sl         ? money(s.sl)         : isLoading ? "Loading..." : "--";
+  const target    = s.target     ? money(s.target)     : isLoading ? "Loading..." : "--";
+  const reason    = safeStr(s.reason || s.summary, isLoading ? "Loading..." : "No setup yet");
+  const symbol    = safeStr(s.symbol, "");
+  const qty       = s.qty        ? String(s.qty)       : "--";
+  const lotSize   = s.lot_size   ? String(s.lot_size)  : "--";
+
+  // Risk:Reward
+  let rr = "--";
+  if (s.premium && s.sl && s.target) {
+    const risk   = Math.abs(Number(s.premium) - Number(s.sl));
+    const reward = Math.abs(Number(s.target)  - Number(s.premium));
+    if (risk > 0) rr = `1 : ${(reward / risk).toFixed(1)}`;
+  }
+
+  return (
+    <View style={styles.panel}>
+      <View style={styles.panelHeaderRow}>
+        <Text style={styles.panelTitle}>Trade Suggestion</Text>
+        <View style={[styles.decisionBadge,
+          signal === "CE" || signal === "BUY" ? styles.decisionBuy :
+          signal === "PE" || signal === "SELL" ? styles.decisionSell :
+          styles.decisionWait]}>
+          <Text style={styles.decisionBadgeText}>{signal}</Text>
+        </View>
+      </View>
+
+      {symbol ? <Text style={styles.suggSymbol}>{symbol}</Text> : null}
+
+      <View style={styles.suggGrid}>
+        <View style={styles.suggCell}>
+          <Text style={styles.suggLabel}>Entry</Text>
+          <Text style={styles.suggValue}>{entry}</Text>
+        </View>
+        <View style={styles.suggCell}>
+          <Text style={styles.suggLabel}>Stop Loss</Text>
+          <Text style={[styles.suggValue, styles.bad]}>{sl}</Text>
+        </View>
+        <View style={styles.suggCell}>
+          <Text style={styles.suggLabel}>Target</Text>
+          <Text style={[styles.suggValue, styles.good]}>{target}</Text>
+        </View>
+        <View style={styles.suggCell}>
+          <Text style={styles.suggLabel}>Risk:Reward</Text>
+          <Text style={styles.suggValue}>{rr}</Text>
+        </View>
+        <View style={styles.suggCell}>
+          <Text style={styles.suggLabel}>Qty</Text>
+          <Text style={styles.suggValue}>{qty}</Text>
+        </View>
+        <View style={styles.suggCell}>
+          <Text style={styles.suggLabel}>Lot Size</Text>
+          <Text style={styles.suggValue}>{lotSize}</Text>
+        </View>
+      </View>
+
+      <View style={styles.aiReasonBox}>
+        <Text style={styles.aiReasonTitle}>Reason</Text>
+        <Text style={styles.aiReasonText}>{reason}</Text>
+      </View>
+    </View>
+  );
 }
 
 function ScreenTabs({ active, onChange }) {
@@ -958,12 +1125,60 @@ function ChartCard({ title, subtitle, values, tall, pnl }) {
 
 function RecentTrades({ trades }) {
   const closedTrades = Array.isArray(trades) ? [...trades].reverse() : [];
+
+  // Compute stats
+  const pnls      = closedTrades.map((t) => Number(t.net_pnl ?? t.pnl ?? 0));
+  const winners   = pnls.filter((p) => p > 0);
+  const losers    = pnls.filter((p) => p < 0);
+  const winRate   = pnls.length ? `${Math.round((winners.length / pnls.length) * 100)}%` : "--";
+  const avgWin    = winners.length ? money(winners.reduce((a, b) => a + b, 0) / winners.length) : "--";
+  const avgLoss   = losers.length  ? money(Math.abs(losers.reduce((a, b) => a + b, 0) / losers.length)) : "--";
+  const grossProfit = winners.reduce((a, b) => a + b, 0);
+  const grossLoss   = Math.abs(losers.reduce((a, b) => a + b, 0));
+  const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : winners.length ? "∞" : "--";
+  // Max drawdown
+  let peak = 0, equity = 0, maxDD = 0;
+  [...pnls].reverse().forEach((p) => {
+    equity += p;
+    if (equity > peak) peak = equity;
+    const dd = peak - equity;
+    if (dd > maxDD) maxDD = dd;
+  });
+  const drawdown = maxDD > 0 ? money(maxDD) : "--";
+
   return (
     <View style={styles.panel}>
       <View style={styles.panelHeaderRow}>
         <Text style={styles.panelTitle}>Trade Report</Text>
         <Text style={styles.modePill}>{closedTrades.length} closed</Text>
       </View>
+
+      {/* Stats grid */}
+      {closedTrades.length > 0 ? (
+        <View style={styles.statsGrid}>
+          <View style={styles.statCell}>
+            <Text style={styles.statLabel}>Win Rate</Text>
+            <Text style={[styles.statValue, styles.good]}>{winRate}</Text>
+          </View>
+          <View style={styles.statCell}>
+            <Text style={styles.statLabel}>Profit Factor</Text>
+            <Text style={styles.statValue}>{profitFactor}</Text>
+          </View>
+          <View style={styles.statCell}>
+            <Text style={styles.statLabel}>Avg Winner</Text>
+            <Text style={[styles.statValue, styles.good]}>{avgWin}</Text>
+          </View>
+          <View style={styles.statCell}>
+            <Text style={styles.statLabel}>Avg Loser</Text>
+            <Text style={[styles.statValue, styles.bad]}>{avgLoss}</Text>
+          </View>
+          <View style={styles.statCell}>
+            <Text style={styles.statLabel}>Max Drawdown</Text>
+            <Text style={[styles.statValue, styles.bad]}>{drawdown}</Text>
+          </View>
+        </View>
+      ) : null}
+
       {closedTrades.map((trade, index) => (
         <View key={`${trade.time}-${trade.exit_time}-${index}`} style={styles.tradeRow}>
           <View style={styles.tradeTextBlock}>
@@ -985,7 +1200,7 @@ function RecentTrades({ trades }) {
                 </Text>
               </View>
             </View>
-            <Text style={styles.tradeMeta}>{trade.reason || "--"}</Text>
+            <Text style={styles.tradeMeta}>{safeStr(trade.reason, "--")}</Text>
             <Text style={styles.tradeMeta}>
               Gross {money(trade.gross_pnl ?? trade.pnl)} | Charges {money(trade.charges)} | Net {money(trade.net_pnl ?? trade.pnl)}
             </Text>
@@ -1036,7 +1251,37 @@ function TabButton({ title, active, onPress }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#07111f" },
+  // ── AI Decision Card ──────────────────────────────────────────
+  aiCard: { backgroundColor: "#0d1f35", borderColor: "#1e3a5f", borderWidth: 1.5, borderRadius: 12, padding: 16 },
+  decisionBadge: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 },
+  decisionBuy:   { backgroundColor: "#0d3d2b" },
+  decisionSell:  { backgroundColor: "#3d0d1a" },
+  decisionWait:  { backgroundColor: "#1e2d44" },
+  decisionBadgeText: { color: "#f8fafc", fontSize: 12, fontWeight: "900" },
+  aiMetricRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  aiMetricCell: { backgroundColor: "#08111f", borderColor: "#1e3a5f", borderWidth: 1, borderRadius: 10, flex: 1, padding: 12 },
+  aiMetricLabel: { color: "#64748b", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
+  aiMetricValue: { color: "#f8fafc", fontSize: 15, fontWeight: "900", marginTop: 4 },
+  aiRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderTopColor: "#1e3a5f", borderTopWidth: 1, marginBottom: 4 },
+  aiRowLabel: { color: "#64748b", fontSize: 12, fontWeight: "900" },
+  aiRowValue: { color: "#f8fafc", fontSize: 13, fontWeight: "800", flex: 1, textAlign: "right" },
+  aiReasonBox: { backgroundColor: "#07111f", borderColor: "#1e3a5f", borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 10 },
+  aiReasonTitle: { color: "#55c7ff", fontSize: 11, fontWeight: "900", marginBottom: 6, textTransform: "uppercase" },
+  aiReasonText: { color: "#cbd5e1", fontSize: 13, lineHeight: 20 },
+  aiRecommendBox: { backgroundColor: "#0d1f35", borderColor: "#2ee59d", borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 10 },
+  aiRecommendText: { color: "#f8fafc", fontSize: 14, fontWeight: "800", lineHeight: 21 },
+  neutral: { color: "#94a3b8" },
+  // ── Trade Suggestion Card ─────────────────────────────────────
+  suggSymbol: { color: "#55c7ff", fontSize: 14, fontWeight: "900", marginBottom: 10 },
+  suggGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
+  suggCell: { backgroundColor: "#07111f", borderColor: "#2f4363", borderWidth: 1, borderRadius: 10, padding: 12, width: "48%" },
+  suggLabel: { color: "#64748b", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
+  suggValue: { color: "#f8fafc", fontSize: 15, fontWeight: "900", marginTop: 4 },
+  // ── Reports Stats Grid ────────────────────────────────────────
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
+  statCell: { backgroundColor: "#07111f", borderColor: "#2f4363", borderWidth: 1, borderRadius: 10, padding: 12, width: "48%" },
+  statLabel: { color: "#64748b", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
+  statValue: { color: "#f8fafc", fontSize: 16, fontWeight: "900", marginTop: 4 },
   page: { padding: 16, gap: 12 },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingVertical: 10 },
   eyebrow: { color: "#55c7ff", fontSize: 13, fontWeight: "800" },
