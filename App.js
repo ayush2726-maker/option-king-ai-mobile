@@ -64,6 +64,10 @@ export default function App() {
   const [backtestMonth, setBacktestMonth] = useState(currentMonthText());
   const [backtestMode, setBacktestMode] = useState("FAST");
   const [loading, setLoading] = useState(false);
+  const [aiExpanded, setAiExpanded] = useState(false);
+  const [logsExpanded, setLogsExpanded] = useState(false);
+  const [tradesExpanded, setTradesExpanded] = useState(false);
+  const [manualExpanded, setManualExpanded] = useState(false);
   const [connected, setConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState("Open. Press Refresh.");
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -312,79 +316,127 @@ export default function App() {
 
         {activeScreen === "dashboard" ? (
           <>
-            <TouchableOpacity style={styles.topEmergencyButton} onPress={() => postJson("/stop", {}, "Emergency stop")}>
-              <Text style={styles.emergencyText}>EMERGENCY STOP</Text>
-            </TouchableOpacity>
-
-            <View style={styles.marketStrip}>
-              <MarketItem label="NIFTY" value={number(status?.nifty)} />
-              <MarketItem label="Trend" value={status == null ? "Loading..." : (status?.trend || "Waiting first candle")} />
-              <MarketItem label="Supertrend" value={status == null ? "Loading..." : (status?.supertrend || "Waiting first candle")} />
-              <MarketItem label="Signal" value={status?.signal || "WAIT"} />
-              <MarketItem label="Score" value={status?.score != null ? `${status.score}/100` : "Loading..."} />
-              <MarketItem label="Market" value={status?.market_open ? "OPEN" : "IDLE"} />
-              <MarketItem label="End" value={status?.trade_end || status?.normal_trade_end || "--"} />
-            </View>
-            <Text style={styles.sessionText}>{status?.market_session || "Market session not loaded"}</Text>
-
-            <View style={styles.kpiGrid}>
-              <Kpi title="Bot" value={status?.running ? "RUNNING" : "STOPPED"} positive={status?.running} />
-              <Kpi title="Health" value={status?.health_status || "--"} positive={status?.health_status === "READY"} />
-              <Kpi title="Capital" value={money(status?.capital)} />
-              <Kpi title="Live Equity" value={money(status?.live_equity || status?.capital)} positive={(status?.live_equity || status?.capital || 0) >= (status?.paper_capital || 0)} />
-              <Kpi title="Daily P&L" value={money(status?.daily_pnl)} positive={(status?.daily_pnl || 0) >= 0} />
-            </View>
-
-            <View style={styles.panel}>
-              <View style={styles.panelHeaderRow}>
-                <Text style={styles.panelTitle}>Server Health</Text>
-                <Text style={styles.modePill}>{status?.health_status || "--"}</Text>
+            {/* ── 1. TOP STATUS BAR ── */}
+            <View style={styles.topBar}>
+              <View style={[styles.statusPill,
+                status?.running ? styles.statusPillLive :
+                !connected      ? styles.statusPillOffline :
+                styles.statusPillPaper]}>
+                <Text style={styles.statusPillText}>
+                  {!connected ? "OFFLINE" : status?.running ? (status?.mode === "LIVE" ? "LIVE" : "PAPER") : "STOPPED"}
+                </Text>
               </View>
-              <Text style={styles.bodyStrong}>{status?.health_summary || "Health not loaded"}</Text>
-              <Text style={styles.body}>Angel: {status?.health?.angel || "--"} | Telegram: {status?.health?.telegram || "--"}</Text>
-              <Text style={styles.body}>Auto Start: {status?.health?.auto_start_bot ? "ON" : "OFF"} | Expiry: {status?.expiry_day ? "YES" : "NO"} | Position: {status?.health?.position_open ? "OPEN" : "NONE"}</Text>
-              <Text style={styles.body}>Update: {status?.update_status?.summary || "--"}</Text>
-            </View>
-
-            <TradingChartCard chartData={chartData} status={status} statusPriceHistory={statusPriceHistory} />
-
-            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Controls</Text>
-              <View style={styles.row}>
-                <SmallButton title="Start" onPress={() => postJson("/start", {}, "Start")} green />
-                <SmallButton title="Stop" onPress={() => postJson("/stop", {}, "Stop")} red />
-                <SmallButton title="Scan" onPress={() => postJson("/scan", {}, "Scan")} blue />
+              <View style={styles.topBarCenter}>
+                <Text style={styles.topNifty}>{number(status?.nifty)}</Text>
+                <Text style={styles.topNiftyLabel}>NIFTY</Text>
               </View>
-              <View style={styles.spacer} />
-              <View style={styles.row}>
-                <SmallButton title="Close Pos" onPress={() => postJson("/close-position", {}, "Close position")} red />
-                <SmallButton title="Refresh" onPress={() => refreshAll(true)} blue />
+              <TouchableOpacity style={styles.emergencyPill} onPress={() => postJson("/stop", {}, "Emergency stop")}>
+                <Text style={styles.emergencyPillText}>■ STOP</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── 2. LIVE METRICS ROW ── */}
+            <View style={styles.metricsRow}>
+              <View style={styles.metricBox}>
+                <Text style={styles.metricBoxLabel}>P&L</Text>
+                <Text style={[styles.metricBoxValue, (status?.daily_pnl || 0) >= 0 ? styles.good : styles.bad]}>
+                  {money(status?.daily_pnl)}
+                </Text>
               </View>
-              <View style={styles.spacer} />
-              <SmallButton title="Send Health Alert" onPress={() => postJson("/health-test", {}, "Health alert")} />
+              <View style={styles.metricBox}>
+                <Text style={styles.metricBoxLabel}>Signal</Text>
+                <Text style={[styles.metricBoxValue,
+                  status?.signal === "CE" ? styles.good :
+                  status?.signal === "PE" ? styles.bad : styles.neutral]}>
+                  {status?.signal || (status == null ? "..." : "WAIT")}
+                </Text>
+              </View>
+              <View style={styles.metricBox}>
+                <Text style={styles.metricBoxLabel}>Score</Text>
+                <Text style={styles.metricBoxValue}>
+                  {status?.score != null ? `${status.score}/100` : (status == null ? "..." : "--")}
+                </Text>
+              </View>
+              <View style={styles.metricBox}>
+                <Text style={styles.metricBoxLabel}>Capital</Text>
+                <Text style={styles.metricBoxValue}>{money(status?.capital)}</Text>
+              </View>
             </View>
 
-            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Open Position</Text>
-              <Text style={styles.body}>{formatPosition(status?.position)}</Text>
+            {/* ── 3. OPEN POSITION (compact) ── */}
+            <CompactPosition position={status?.position} />
+
+            {/* ── 4. CONTROLS (compact) ── */}
+            <View style={styles.controlsRow}>
+              <TouchableOpacity style={[styles.ctrlBtn, styles.ctrlGreen]} onPress={() => postJson("/start", {}, "Start")}>
+                <Text style={styles.ctrlText}>▶ Start</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.ctrlBtn, styles.ctrlRed]} onPress={() => postJson("/stop", {}, "Stop")}>
+                <Text style={styles.ctrlText}>■ Stop</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.ctrlBtn, styles.ctrlBlue]} onPress={() => postJson("/scan", {}, "Scan")}>
+                <Text style={styles.ctrlText}>⟳ Scan</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.ctrlBtn, styles.ctrlRed]} onPress={() => postJson("/close-position", {}, "Close position")}>
+                <Text style={styles.ctrlText}>✕ Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.ctrlBtn, styles.ctrlBlue]} onPress={() => refreshAll(true)}>
+                <Text style={styles.ctrlText}>↺ Refresh</Text>
+              </TouchableOpacity>
             </View>
 
-            <AiDecisionCard status={status} />
+            {/* ── 5. AI DECISION (collapsible) ── */}
+            <CollapsibleAiCard
+              status={status}
+              expanded={aiExpanded}
+              onToggle={() => setAiExpanded(v => !v)}
+            />
 
+            {/* ── 6. TRADE SUGGESTION (compact) ── */}
             <TradeSuggestionCard status={status} />
 
+            {/* ── 7. LIVE LOGS (collapsed by default) ── */}
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Market Scan</Text>
-              <Text style={styles.bodyStrong}>{scan?.summary || "Market scan: --"}</Text>
-              {(scan?.results || []).slice(0, 4).map((item, index) => (
-                <View key={`${item.name}-${index}`} style={styles.scanRow}>
-                  <Text style={styles.scanName}>{item.name}</Text>
-                  <Text style={styles.scanDetail}>Score {item.score}/100 | {item.detail}</Text>
+              <TouchableOpacity style={styles.panelHeaderRow} onPress={() => setLogsExpanded(v => !v)}>
+                <Text style={styles.panelTitle}>Live Logs</Text>
+                <View style={styles.rowGap}>
+                  <Text style={styles.modePill}>{logs.length} lines</Text>
+                  <Text style={styles.expandChevron}>{logsExpanded ? "▲" : "▼"}</Text>
                 </View>
+              </TouchableOpacity>
+              {logs.slice(-2).reverse().map((line, i) => (
+                <Text key={i} style={styles.logLine} numberOfLines={1}>{line}</Text>
               ))}
+              {logsExpanded && logs.length > 2 && logs.slice(0, -2).reverse().map((line, i) => (
+                <Text key={`ex-${i}`} style={styles.logLine}>{line}</Text>
+              ))}
+              {logs.length === 0 ? <Text style={styles.body}>No logs yet</Text> : null}
             </View>
 
-            <RecentTrades trades={trades} />
+            {/* ── 8. TRADE REPORT (compact: 3 trades, expandable) ── */}
+            <CompactTradeReport
+              trades={trades}
+              expanded={tradesExpanded}
+              onToggle={() => setTradesExpanded(v => !v)}
+            />
+
+            {/* ── 9. MANUAL TRADE (collapsed by default) ── */}
+            <View style={styles.panel}>
+              <TouchableOpacity style={styles.panelHeaderRow} onPress={() => setManualExpanded(v => !v)}>
+                <Text style={styles.panelTitle}>Manual Trade</Text>
+                <Text style={styles.expandChevron}>{manualExpanded ? "▲" : "▼"}</Text>
+              </TouchableOpacity>
+              {manualExpanded ? (
+                <View style={{ marginTop: 8, gap: 8 }}>
+                  <View style={styles.row}>
+                    <SmallButton title="Manual Buy CE" onPress={() => postJson("/manual-buy", { signal: "CE" }, "Manual CE")} green />
+                    <SmallButton title="Manual Buy PE" onPress={() => postJson("/manual-buy", { signal: "PE" }, "Manual PE")} red />
+                  </View>
+                  <SmallButton title="Close Position" onPress={() => postJson("/close-position", {}, "Close position")} red />
+                  <SmallButton title="Health Alert" onPress={() => postJson("/health-test", {}, "Health alert")} />
+                </View>
+              ) : null}
+            </View>
           </>
         ) : null}
 
@@ -862,6 +914,174 @@ function TradeSuggestionCard({ status }) {
         <Text style={styles.aiReasonTitle}>Reason</Text>
         <Text style={styles.aiReasonText}>{reason}</Text>
       </View>
+    </View>
+  );
+}
+
+function CompactPosition({ position }) {
+  if (!position || !position.symbol) {
+    return (
+      <View style={styles.compactPosition}>
+        <Text style={styles.noPositionText}>No open position</Text>
+      </View>
+    );
+  }
+  const pnl = Number(position.live_pnl ?? position.pnl ?? 0);
+  return (
+    <View style={[styles.compactPosition, styles.compactPositionActive]}>
+      <View style={styles.posRow}>
+        <Text style={styles.posSymbol}>{position.symbol}</Text>
+        <Text style={[styles.posPnl, pnl >= 0 ? styles.good : styles.bad]}>{money(pnl)}</Text>
+      </View>
+      <View style={styles.posGrid}>
+        <View style={styles.posCell}><Text style={styles.posCellLabel}>Qty</Text><Text style={styles.posCellValue}>{position.qty || "--"}</Text></View>
+        <View style={styles.posCell}><Text style={styles.posCellLabel}>Entry</Text><Text style={styles.posCellValue}>{money(position.entry)}</Text></View>
+        <View style={styles.posCell}><Text style={styles.posCellLabel}>LTP</Text><Text style={styles.posCellValue}>{money(position.ltp)}</Text></View>
+        <View style={styles.posCell}><Text style={styles.posCellLabel}>SL</Text><Text style={[styles.posCellValue, styles.bad]}>{money(position.sl)}</Text></View>
+        <View style={styles.posCell}><Text style={styles.posCellLabel}>Target</Text><Text style={[styles.posCellValue, styles.good]}>{money(position.target)}</Text></View>
+      </View>
+    </View>
+  );
+}
+
+function CollapsibleAiCard({ status, expanded, onToggle }) {
+  const decision   = status?.ai_decision || status?.last_ai_decision || {};
+  const suggestion = status?.suggestion  || {};
+  const isLoading  = status == null;
+
+  const decisionText = safeStr(decision.decision || suggestion.signal, isLoading ? "..." : "WAIT");
+  const confidence   = formatConfidence(decision.confidence || suggestion.confidence);
+  const regime       = safeStr(decision.market_regime || status?.market_regime, isLoading ? "..." : "--");
+  const score        = status?.score != null ? `${status.score}/100` : "--";
+  const reasonSummary = safeStr(
+    (Array.isArray(decision.reasons) ? decision.reasons[0] : null) ||
+    decision.reason || suggestion.reason || suggestion.summary || status?.suggestion_summary,
+    isLoading ? "Loading..." : "No reason yet"
+  );
+  const trend      = safeStr(decision.trend || status?.trend, "--");
+  const fakeRisk   = safeStr(decision.fake_risk || decision.fake_signal_risk, "--");
+  const gemini     = safeStr(decision.gemini_status || decision.gemini, "--");
+  const recommend  = safeStr(decision.recommendation || suggestion.summary || status?.suggestion_summary, "--");
+  const fullReasons = formatReasonList(decision.reasons || decision.reason_list || decision.details);
+
+  const badgeStyle = decisionText === "BUY" || decisionText === "CE" ? styles.decisionBuy
+    : decisionText === "SELL" || decisionText === "PE"               ? styles.decisionSell
+    : styles.decisionWait;
+
+  return (
+    <View style={styles.aiCard}>
+      {/* Header row — always visible, tap to expand */}
+      <TouchableOpacity style={styles.panelHeaderRow} onPress={onToggle}>
+        <Text style={styles.panelTitle}>AI Decision</Text>
+        <View style={styles.rowGap}>
+          <View style={[styles.decisionBadge, badgeStyle]}>
+            <Text style={styles.decisionBadgeText}>{decisionText}</Text>
+          </View>
+          <Text style={styles.expandChevron}>{expanded ? "▲" : "▼"}</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* Summary row — always visible */}
+      <View style={styles.aiSummaryRow}>
+        <View style={styles.aiSummaryCell}>
+          <Text style={styles.aiMetricLabel}>Score</Text>
+          <Text style={styles.aiMetricValue}>{score}</Text>
+        </View>
+        <View style={styles.aiSummaryCell}>
+          <Text style={styles.aiMetricLabel}>Confidence</Text>
+          <Text style={[styles.aiMetricValue, confidence === "--" ? styles.neutral : styles.good]}>{confidence}</Text>
+        </View>
+        <View style={styles.aiSummaryCell}>
+          <Text style={styles.aiMetricLabel}>Regime</Text>
+          <Text style={styles.aiMetricValue} numberOfLines={1}>{regime}</Text>
+        </View>
+      </View>
+      <Text style={styles.aiReasonSummary} numberOfLines={expanded ? undefined : 2}>{reasonSummary}</Text>
+
+      {/* Expanded details */}
+      {expanded ? (
+        <>
+          <View style={styles.aiMetricRow}>
+            <View style={styles.aiMetricCell}>
+              <Text style={styles.aiMetricLabel}>Trend</Text>
+              <Text style={styles.aiMetricValue}>{trend}</Text>
+            </View>
+            <View style={styles.aiMetricCell}>
+              <Text style={styles.aiMetricLabel}>Fake Risk</Text>
+              <Text style={[styles.aiMetricValue, fakeRisk === "HIGH" ? styles.bad : fakeRisk === "LOW" ? styles.good : styles.neutral]}>{fakeRisk}</Text>
+            </View>
+          </View>
+          <View style={styles.aiRow}>
+            <Text style={styles.aiRowLabel}>Gemini</Text>
+            <Text style={styles.aiRowValue}>{gemini}</Text>
+          </View>
+          {fullReasons !== "--" ? (
+            <View style={styles.aiReasonBox}>
+              <Text style={styles.aiReasonTitle}>Analysis Details</Text>
+              <Text style={styles.aiReasonText}>{fullReasons}</Text>
+            </View>
+          ) : null}
+          <View style={styles.aiRecommendBox}>
+            <Text style={styles.aiReasonTitle}>Recommendation</Text>
+            <Text style={styles.aiRecommendText}>{recommend}</Text>
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function CompactTradeReport({ trades, expanded, onToggle }) {
+  const closed = Array.isArray(trades) ? [...trades].reverse() : [];
+  const pnls   = closed.map(t => Number(t.net_pnl ?? t.pnl ?? 0));
+  const winners = pnls.filter(p => p > 0);
+  const losers  = pnls.filter(p => p < 0);
+  const winRate = pnls.length ? `${Math.round((winners.length / pnls.length) * 100)}%` : "--";
+  const totalPnl = pnls.reduce((a, b) => a + b, 0);
+
+  const displayTrades = expanded ? closed : closed.slice(0, 3);
+
+  return (
+    <View style={styles.panel}>
+      <TouchableOpacity style={styles.panelHeaderRow} onPress={onToggle}>
+        <Text style={styles.panelTitle}>Trade Report</Text>
+        <View style={styles.rowGap}>
+          <Text style={[styles.modePill, totalPnl >= 0 ? styles.modePillGood : styles.modePillBad]}>
+            {money(totalPnl)}
+          </Text>
+          <Text style={styles.modePill}>{closed.length} trades</Text>
+          <Text style={styles.expandChevron}>{expanded ? "▲" : "▼"}</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* Mini stats always visible */}
+      {closed.length > 0 ? (
+        <View style={styles.miniStatsRow}>
+          <Text style={styles.miniStat}>Win <Text style={styles.good}>{winRate}</Text></Text>
+          <Text style={styles.miniStat}>W <Text style={styles.good}>{winners.length}</Text></Text>
+          <Text style={styles.miniStat}>L <Text style={styles.bad}>{losers.length}</Text></Text>
+        </View>
+      ) : null}
+
+      {displayTrades.map((trade, index) => (
+        <View key={`${trade.time}-${index}`} style={styles.tradeRowCompact}>
+          <View style={styles.tradeTextBlock}>
+            <Text style={styles.tradeSymbol} numberOfLines={1}>{trade.symbol || "DEMO"}</Text>
+            <Text style={styles.tradeMeta}>{trade.date || "--"} | {trade.signal || "--"} | Qty {trade.qty || 0}</Text>
+            <Text style={styles.tradeMeta}>{safeStr(trade.reason, "--")}</Text>
+          </View>
+          <Text style={[styles.tradePnl, Number(trade.net_pnl ?? trade.pnl ?? 0) >= 0 ? styles.good : styles.bad]}>
+            {money(trade.net_pnl ?? trade.pnl)}
+          </Text>
+        </View>
+      ))}
+
+      {!expanded && closed.length > 3 ? (
+        <TouchableOpacity onPress={onToggle} style={styles.viewAllBtn}>
+          <Text style={styles.viewAllText}>View All {closed.length} Trades ▼</Text>
+        </TouchableOpacity>
+      ) : null}
+      {closed.length === 0 ? <Text style={styles.body}>No trades yet</Text> : null}
     </View>
   );
 }
@@ -1390,4 +1610,46 @@ const styles = StyleSheet.create({
   infoText: { color: "#cbd5e1", fontSize: 12, lineHeight: 18 },
   statusBox: { backgroundColor: "#08111f", borderColor: "#2f4363", borderWidth: 1, borderRadius: 8, padding: 12, flexDirection: "row", gap: 10 },
   statusText: { color: "#cbd5e1", flex: 1 },
+  // ── Compact Dashboard ─────────────────────────────────────────
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#101b2d", borderColor: "#2f4363", borderWidth: 1, borderRadius: 10, padding: 10 },
+  statusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  statusPillLive:    { backgroundColor: "#0d3d2b" },
+  statusPillPaper:   { backgroundColor: "#1e2d44" },
+  statusPillOffline: { backgroundColor: "#3d1a1a" },
+  statusPillText: { color: "#f8fafc", fontSize: 11, fontWeight: "900" },
+  topBarCenter: { alignItems: "center" },
+  topNifty: { color: "#f8fafc", fontSize: 22, fontWeight: "900" },
+  topNiftyLabel: { color: "#64748b", fontSize: 10, fontWeight: "800" },
+  emergencyPill: { backgroundColor: "#ff315f", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
+  emergencyPillText: { color: "#fff", fontSize: 12, fontWeight: "900" },
+  metricsRow: { flexDirection: "row", gap: 6 },
+  metricBox: { flex: 1, backgroundColor: "#101b2d", borderColor: "#2f4363", borderWidth: 1, borderRadius: 8, padding: 10, alignItems: "center" },
+  metricBoxLabel: { color: "#64748b", fontSize: 9, fontWeight: "900", textTransform: "uppercase" },
+  metricBoxValue: { color: "#f8fafc", fontSize: 13, fontWeight: "900", marginTop: 3 },
+  controlsRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  ctrlBtn: { borderRadius: 8, paddingVertical: 10, paddingHorizontal: 10, alignItems: "center", flex: 1, minWidth: "18%" },
+  ctrlGreen: { backgroundColor: "#0d3d2b" },
+  ctrlRed:   { backgroundColor: "#3d0d1a" },
+  ctrlBlue:  { backgroundColor: "#0d2a4a" },
+  ctrlText: { color: "#f8fafc", fontSize: 11, fontWeight: "900" },
+  compactPosition: { backgroundColor: "#101b2d", borderColor: "#2f4363", borderWidth: 1, borderRadius: 8, padding: 10 },
+  compactPositionActive: { borderColor: "#2ee59d", borderWidth: 1.5 },
+  noPositionText: { color: "#64748b", fontSize: 13, fontWeight: "800", textAlign: "center", paddingVertical: 4 },
+  posRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  posSymbol: { color: "#55c7ff", fontSize: 13, fontWeight: "900" },
+  posPnl: { fontSize: 16, fontWeight: "900" },
+  posGrid: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  posCell: { backgroundColor: "#08111f", borderRadius: 6, padding: 7, minWidth: "18%" },
+  posCellLabel: { color: "#64748b", fontSize: 9, fontWeight: "900" },
+  posCellValue: { color: "#f8fafc", fontSize: 12, fontWeight: "900", marginTop: 2 },
+  aiSummaryRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  aiSummaryCell: { flex: 1, backgroundColor: "#08111f", borderRadius: 8, padding: 8 },
+  aiReasonSummary: { color: "#cbd5e1", fontSize: 12, lineHeight: 18, marginBottom: 4 },
+  miniStatsRow: { flexDirection: "row", gap: 12, marginBottom: 8 },
+  miniStat: { color: "#94a3b8", fontSize: 12, fontWeight: "800" },
+  tradeRowCompact: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", paddingVertical: 7, borderTopColor: "#2f4363", borderTopWidth: 1, gap: 8 },
+  viewAllBtn: { alignItems: "center", paddingVertical: 8, borderTopColor: "#2f4363", borderTopWidth: 1, marginTop: 4 },
+  viewAllText: { color: "#55c7ff", fontSize: 13, fontWeight: "900" },
+  rowGap: { flexDirection: "row", alignItems: "center", gap: 8 },
+  expandChevron: { color: "#64748b", fontSize: 14, fontWeight: "900" },
 });
