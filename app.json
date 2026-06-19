@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.ayush2726.optionkingaimobile",
-      "versionCode": 25,
+      "versionCode": 21,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-foreground.png",
         "backgroundColor": "#07111f"
