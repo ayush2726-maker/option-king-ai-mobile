@@ -32,25 +32,18 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: |
-          npm ci
-          npm install --save-dev @react-native-community/cli
+        run: npm ci
 
       - name: Generate Android project
         run: npx expo prebuild --platform android --clean --non-interactive
         env:
           EXPO_NO_TELEMETRY: "1"
 
-      - name: Bundle JS into assets
-        run: |
-          mkdir -p android/app/src/main/assets
-          npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res --reset-cache
-
-      - name: Build debug APK
+      - name: Build APK with JS bundle
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew bundleDebugJsAndAssets assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
