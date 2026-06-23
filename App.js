@@ -420,23 +420,84 @@ export default function App() {
         )}
 
         {activeScreen === "backtest" && (
-          <Card>
-            <CardHeader title="Backtest" sub="Paper simulation" />
-            <PrimaryBtn label={backtestRunning ? "Running..." : "Run Today Backtest"} icon="▶" color={C.accent}
-              onPress={async () => {
-                setBacktestRunning(true);
-                const r = await apiFetch("/backtest", { method: "POST", body: JSON.stringify({}) }).catch(() => null);
-                setBacktestResult(r);
-                setBacktestRunning(false);
-              }} />
-            {backtestResult && (
-              <View style={{ marginTop: 12 }}>
-                <Text style={{ color: C.sub, fontSize: 12, lineHeight: 19 }}>
-                  {typeof backtestResult === "string" ? backtestResult : JSON.stringify(backtestResult, null, 2)}
-                </Text>
-              </View>
-            )}
-          </Card>
+          <>
+            <Card>
+              <CardHeader title="Backtest" sub="Paper mode simulation on today's data" />
+              <PrimaryBtn
+                label={backtestRunning ? "Running..." : "▶  Run Today Backtest"}
+                color={C.accent}
+                onPress={async () => {
+                  setBacktestRunning(true);
+                  setBacktestResult(null);
+                  const r = await apiFetch("/backtest", { method: "POST", body: JSON.stringify({}) }).catch(e => ({ error: e.message }));
+                  setBacktestResult(r);
+                  setBacktestRunning(false);
+                }}
+              />
+            </Card>
+
+            {backtestResult && (() => {
+              const r = backtestResult;
+              const isErr = r?.error;
+              const trades = r?.trades || r?.closed_trades || [];
+              const pnl = Number(r?.net_pnl ?? r?.total_pnl ?? r?.pnl ?? 0);
+              const wins = trades.filter(t => Number(t.net_pnl ?? t.pnl ?? 0) > 0).length;
+              const losses = trades.length - wins;
+              const wr = trades.length ? `${Math.round((wins / trades.length) * 100)}%` : "--";
+
+              return (
+                <>
+                  {isErr ? (
+                    <Card glow={C.red}>
+                      <Text style={{ color: C.red, fontSize: 13 }}>Error: {r.error}</Text>
+                    </Card>
+                  ) : (
+                    <>
+                      <Card glow={pnl >= 0 ? C.green : C.red}>
+                        <CardHeader title="Backtest Result" />
+                        <Row style={{ gap: 7, marginBottom: 10 }}>
+                          <StatBox label="Net P&L"   value={pnlText(pnl)}           color={pnl >= 0 ? C.green : C.red} />
+                          <StatBox label="Trades"    value={String(trades.length)}  color={C.blue} />
+                        </Row>
+                        <Row style={{ gap: 7 }}>
+                          <StatBox label="Win Rate"  value={wr}    color={C.green} />
+                          <StatBox label="W / L"     value={`${wins} / ${losses}`} color={C.sub} />
+                        </Row>
+                      </Card>
+
+                      {trades.length > 0 && (
+                        <Card>
+                          <CardHeader title="Trades" />
+                          {trades.map((t, i) => {
+                            const tp = Number(t.net_pnl ?? t.pnl ?? 0);
+                            return (
+                              <View key={i} style={{ paddingVertical: 9, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: C.border }}>
+                                <Row style={{ justifyContent: "space-between" }}>
+                                  <Text style={{ color: C.text, fontSize: 12, fontWeight: "900" }}>{t.symbol || `Trade ${i + 1}`}</Text>
+                                  <Text style={{ color: tp >= 0 ? C.green : C.red, fontSize: 13, fontWeight: "900" }}>{pnlText(tp)}</Text>
+                                </Row>
+                                <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>
+                                  {t.signal || "--"} · Entry {money(t.entry)} · Exit {money(t.exit)} · Qty {t.qty || "--"}
+                                </Text>
+                                {t.reason ? <Text style={{ color: C.muted, fontSize: 10, marginTop: 1 }}>{safeStr(t.reason)}</Text> : null}
+                              </View>
+                            );
+                          })}
+                        </Card>
+                      )}
+
+                      {r?.summary || r?.message ? (
+                        <Card>
+                          <CardHeader title="Summary" />
+                          <Text style={{ color: C.sub, fontSize: 12, lineHeight: 19 }}>{safeStr(r?.summary || r?.message)}</Text>
+                        </Card>
+                      ) : null}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </>
         )}
 
         {activeScreen === "info" && (
