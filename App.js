@@ -214,14 +214,21 @@ export default function App() {
         apiFetch("/scan"),
       ]);
       if (s.status === "fulfilled") {
-        setStatus(s.value);
+        const val = s.value?.data ?? s.value;
+        setStatus(val);
         setConnected(true);
-        if (s.value?.nifty) setStatusPriceHistory(p => [...p.slice(-59), { price: Number(s.value.nifty), time: new Date().toLocaleTimeString() }]);
+        if (val?.nifty) setStatusPriceHistory(p => [...p.slice(-59), { price: Number(val.nifty), time: new Date().toLocaleTimeString() }]);
       } else setConnected(false);
-      if (t.status === "fulfilled") setTrades(Array.isArray(t.value) ? t.value : t.value?.trades || []);
-      if (l.status === "fulfilled") setLogs(Array.isArray(l.value) ? l.value : l.value?.logs || []);
-      if (c.status === "fulfilled") setChartData(c.value);
-      if (sc.status === "fulfilled") setScan(sc.value);
+      if (t.status === "fulfilled") {
+        const val = t.value?.data ?? t.value;
+        setTrades(Array.isArray(val) ? val : val?.trades || []);
+      }
+      if (l.status === "fulfilled") {
+        const val = l.value?.data ?? l.value;
+        setLogs(Array.isArray(val) ? val : val?.logs || []);
+      }
+      if (c.status === "fulfilled") setChartData(c.value?.data ?? c.value);
+      if (sc.status === "fulfilled") setScan(sc.value?.data ?? sc.value);
     } catch { setConnected(false); }
     setLoading(false);
   }
