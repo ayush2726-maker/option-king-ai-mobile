@@ -193,17 +193,25 @@ export default function App() {
     });
   }, []);
 
+  const baseUrlRef  = useRef(baseUrl);
+  const apiTokenRef = useRef(apiToken);
+  const loadingRef  = useRef(false);
+
+  useEffect(() => { baseUrlRef.current  = baseUrl;  }, [baseUrl]);
+  useEffect(() => { apiTokenRef.current = apiToken; }, [apiToken]);
+
   async function apiFetch(path, opts = {}) {
-    const res = await fetch(normalizeUrl(baseUrl) + path, {
+    const res = await fetch(normalizeUrl(baseUrlRef.current) + path, {
       ...opts,
-      headers: { "Content-Type": "application/json", "X-Api-Token": apiToken, ...(opts.headers || {}) },
+      headers: { "Content-Type": "application/json", "X-Api-Token": apiTokenRef.current, ...(opts.headers || {}) },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }
 
   async function refreshAll(force = false) {
-    if (loading && !force) return;
+    if (loadingRef.current && !force) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const [s, t, l, c, sc] = await Promise.allSettled([
@@ -218,7 +226,9 @@ export default function App() {
         setStatus(val);
         setConnected(true);
         if (val?.nifty) setStatusPriceHistory(p => [...p.slice(-59), { price: Number(val.nifty), time: new Date().toLocaleTimeString() }]);
-      } else setConnected(false);
+      } else {
+        setConnected(false);
+      }
       if (t.status === "fulfilled") {
         const val = t.value?.data ?? t.value;
         setTrades(Array.isArray(val) ? val : val?.trades || []);
@@ -229,14 +239,22 @@ export default function App() {
       }
       if (c.status === "fulfilled") setChartData(c.value?.data ?? c.value);
       if (sc.status === "fulfilled") setScan(sc.value?.data ?? sc.value);
-    } catch { setConnected(false); }
+    } catch {
+      setConnected(false);
+    }
+    loadingRef.current = false;
     setLoading(false);
   }
 
+  // Auto refresh — uses ref so interval always has fresh function
+  const refreshRef = useRef(refreshAll);
+  useEffect(() => { refreshRef.current = refreshAll; });
+
   useEffect(() => {
-    refreshAll(true);
-    if (autoRefresh) { timerRef.current = setInterval(() => refreshAll(), REFRESH_MS); }
-    return () => clearInterval(timerRef.current);
+    refreshRef.current(true);
+    if (!autoRefresh) return;
+    const id = setInterval(() => refreshRef.current(), REFRESH_MS);
+    return () => clearInterval(id);
   }, [baseUrl, apiToken, autoRefresh]);
 
   async function postJson(path, body, label) {
@@ -262,6 +280,11 @@ export default function App() {
     const isLive = s?.mode === "LIVE" || s?.trade_mode === "LIVE";
     const running = s?.running;
     const nifty = s?.nifty ? num(s.nifty) : "--";
+    // Capital: use live_equity for LIVE mode, capital for PAPER
+    const capitalVal = isLive
+      ? (s?.live_equity || s?.capital || 0)
+      : (s?.paper_capital || s?.capital || 0);
+    const capitalStr = capitalVal ? `₹${Number(capitalVal).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "--";
 
     return (
       <>
@@ -301,7 +324,7 @@ export default function App() {
             {[
               { l: "SIGNAL", v: signal, c: signal === "CE" ? C.green : signal === "PE" ? C.red : C.sub },
               { l: "SCORE",  v: score,  c: C.gold },
-              { l: "CAPITAL", v: s?.capital ? `₹${Number(s.capital).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "--", c: C.text },
+              { l: "CAPITAL", v: capitalStr, c: C.text },
               { l: "TRADES", v: `${s?.trades_today ?? 0}/${s?.max_trades ?? 3}`, c: C.blue },
             ].map(({ l, v, c }) => (
               <View key={l} style={{ alignItems: "center" }}>
@@ -420,91 +443,46 @@ export default function App() {
         {activeScreen === "dashboard" && <DashboardScreen />}
 
         {activeScreen === "chart" && (
-          <Card>
-            <CardHeader title="NIFTY Chart" sub="Live price history" />
-            <MiniPriceChart history={statusPriceHistory} />
-          </Card>
+          <>
+            <Card>
+              <CardHeader title="NIFTY Chart" sub="Live 1-min price history" />
+              <MiniPriceChart history={statusPriceHistory} status={status} />
+            </Card>
+
+            {/* Indicators card */}
+            <Card>
+              <CardHeader title="Live Indicators" sub="From NIFTY index candles" />
+              {(() => {
+                const ind = status?.indicators || {};
+                const adxVal = ind.adx != null ? ind.adx.toFixed(2) : "--";
+                const adxColor = ind.adx == null ? C.muted : ind.adx >= 25 ? C.green : ind.adx >= 18 ? C.gold : C.red;
+                const rows = [
+                  { l: "EMA 9",       v: ind.ema9  ? ind.ema9.toFixed(2)  : "--", c: C.blue },
+                  { l: "EMA 21",      v: ind.ema21 ? ind.ema21.toFixed(2) : "--", c: C.purple },
+                  { l: "VWAP",        v: ind.vwap  ? ind.vwap.toFixed(2)  : "--", c: C.gold },
+                  { l: "Supertrend",  v: safeStr(ind.supertrend, "--"), c: ind.supertrend === "UP" ? C.green : ind.supertrend === "DOWN" ? C.red : C.sub },
+                  { l: "ADX(14)",     v: adxVal,   c: adxColor },
+                  { l: "+DI",         v: ind.adx_plus_di  != null ? ind.adx_plus_di.toFixed(2)  : "--", c: C.green },
+                  { l: "-DI",         v: ind.adx_minus_di != null ? ind.adx_minus_di.toFixed(2) : "--", c: C.red },
+                  { l: "ORB High",    v: ind.orb_high ? ind.orb_high.toFixed(2) : "--", c: C.green },
+                  { l: "ORB Low",     v: ind.orb_low  ? ind.orb_low.toFixed(2)  : "--", c: C.red },
+                  { l: "Day High",    v: ind.nifty_high ? ind.nifty_high.toFixed(2) : "--", c: C.text },
+                  { l: "Day Low",     v: ind.nifty_low  ? ind.nifty_low.toFixed(2)  : "--", c: C.text },
+                  { l: "Candles",     v: ind.candles != null ? `${ind.candles} (${ind.adx_ready ? "ADX ready" : "ADX building..."})` : "--", c: C.muted },
+                ];
+                return rows.map(({ l, v, c }) => (
+                  <Row key={l} style={{ justifyContent: "space-between", paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.border }}>
+                    <Text style={{ color: C.muted, fontSize: 12, fontWeight: "800" }}>{l}</Text>
+                    <Text style={{ color: c, fontSize: 13, fontWeight: "900" }}>{v}</Text>
+                  </Row>
+                ));
+              })()}
+            </Card>
+          </>
         )}
 
         {activeScreen === "backtest" && (
-          <>
-            <Card>
-              <CardHeader title="Backtest" sub="Paper mode simulation on today's data" />
-              <PrimaryBtn
-                label={backtestRunning ? "Running..." : "▶  Run Today Backtest"}
-                color={C.accent}
-                onPress={async () => {
-                  setBacktestRunning(true);
-                  setBacktestResult(null);
-                  const r = await apiFetch("/backtest", { method: "POST", body: JSON.stringify({}) }).catch(e => ({ error: e.message }));
-                  setBacktestResult(r);
-                  setBacktestRunning(false);
-                }}
-              />
-            </Card>
-
-            {backtestResult && (() => {
-              const r = backtestResult;
-              const isErr = r?.error;
-              const trades = r?.trades || r?.closed_trades || [];
-              const pnl = Number(r?.net_pnl ?? r?.total_pnl ?? r?.pnl ?? 0);
-              const wins = trades.filter(t => Number(t.net_pnl ?? t.pnl ?? 0) > 0).length;
-              const losses = trades.length - wins;
-              const wr = trades.length ? `${Math.round((wins / trades.length) * 100)}%` : "--";
-
-              return (
-                <>
-                  {isErr ? (
-                    <Card glow={C.red}>
-                      <Text style={{ color: C.red, fontSize: 13 }}>Error: {r.error}</Text>
-                    </Card>
-                  ) : (
-                    <>
-                      <Card glow={pnl >= 0 ? C.green : C.red}>
-                        <CardHeader title="Backtest Result" />
-                        <Row style={{ gap: 7, marginBottom: 10 }}>
-                          <StatBox label="Net P&L"   value={pnlText(pnl)}           color={pnl >= 0 ? C.green : C.red} />
-                          <StatBox label="Trades"    value={String(trades.length)}  color={C.blue} />
-                        </Row>
-                        <Row style={{ gap: 7 }}>
-                          <StatBox label="Win Rate"  value={wr}    color={C.green} />
-                          <StatBox label="W / L"     value={`${wins} / ${losses}`} color={C.sub} />
-                        </Row>
-                      </Card>
-
-                      {trades.length > 0 && (
-                        <Card>
-                          <CardHeader title="Trades" />
-                          {trades.map((t, i) => {
-                            const tp = Number(t.net_pnl ?? t.pnl ?? 0);
-                            return (
-                              <View key={i} style={{ paddingVertical: 9, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: C.border }}>
-                                <Row style={{ justifyContent: "space-between" }}>
-                                  <Text style={{ color: C.text, fontSize: 12, fontWeight: "900" }}>{t.symbol || `Trade ${i + 1}`}</Text>
-                                  <Text style={{ color: tp >= 0 ? C.green : C.red, fontSize: 13, fontWeight: "900" }}>{pnlText(tp)}</Text>
-                                </Row>
-                                <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>
-                                  {t.signal || "--"} · Entry {money(t.entry)} · Exit {money(t.exit)} · Qty {t.qty || "--"}
-                                </Text>
-                                {t.reason ? <Text style={{ color: C.muted, fontSize: 10, marginTop: 1 }}>{safeStr(t.reason)}</Text> : null}
-                              </View>
-                            );
-                          })}
-                        </Card>
-                      )}
-
-                      {r?.summary || r?.message ? (
-                        <Card>
-                          <CardHeader title="Summary" />
-                          <Text style={{ color: C.sub, fontSize: 12, lineHeight: 19 }}>{safeStr(r?.summary || r?.message)}</Text>
-                        </Card>
-                      ) : null}
-                    </>
-                  )}
-                </>
-              );
-            })()}
-          </>
+          <BacktestScreen apiFetch={apiFetch} />
         )}
 
         {activeScreen === "info" && (
@@ -519,6 +497,7 @@ export default function App() {
             baseUrl={baseUrl} onSave={saveSettings}
             status={status}
             postJson={postJson}
+            apiFetch={apiFetch}
           />
         )}
 
@@ -624,6 +603,107 @@ function AiDecisionCard({ status, expanded, onToggle }) {
   const gemini     = safeStr(d.gemini_status || d.gemini, "--");
   const recommend  = safeStr(d.recommendation || sg.summary || status?.suggestion_summary, "--");
   const fullReasons = reasonList(d.reasons || d.reason_list || d.details);
+
+  // Score breakdown components
+  const components = d.components || status?.score_components || sg.components || {};
+  const compKeys = Object.keys(components);
+
+  const isBuy  = decision === "BUY" || decision === "CE";
+  const isSell = decision === "SELL" || decision === "PE";
+  const decColor = isBuy ? C.green : isSell ? C.red : C.sub;
+
+  return (
+    <Card glow={isBuy ? C.green : isSell ? C.red : null}>
+      <TouchableOpacity onPress={onToggle}>
+        <Row style={{ justifyContent: "space-between", marginBottom: 12 }}>
+          <Text style={{ color: C.sub, fontSize: 10, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" }}>AI Decision</Text>
+          <Row style={{ gap: 8 }}>
+            <View style={{ backgroundColor: decColor + "22", borderRadius: 8, borderWidth: 1, borderColor: decColor + "55", paddingHorizontal: 14, paddingVertical: 6 }}>
+              <Text style={{ color: decColor, fontSize: 13, fontWeight: "900" }}>{decision}</Text>
+            </View>
+            <Text style={{ color: C.muted, fontSize: 12 }}>{expanded ? "▲" : "▼"}</Text>
+          </Row>
+        </Row>
+      </TouchableOpacity>
+
+      {/* Always visible summary */}
+      <View style={{ flexDirection: "row", gap: 7, marginBottom: 10 }}>
+        {[
+          { l: "Score", v: score, c: C.gold },
+          { l: "Confidence", v: confidence, c: C.blue },
+          { l: "Regime", v: regime, c: C.text },
+        ].map(({ l, v, c }) => (
+          <View key={l} style={{ flex: 1, backgroundColor: C.s2, borderRadius: 9, padding: 10, borderWidth: 1, borderColor: C.border }}>
+            <Text style={{ color: C.muted, fontSize: 8, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8 }}>{l}</Text>
+            <Text style={{ color: c, fontSize: 13, fontWeight: "900", marginTop: 3 }} numberOfLines={1}>{v}</Text>
+          </View>
+        ))}
+      </View>
+
+      <Text style={{ color: C.sub, fontSize: 12, lineHeight: 18 }} numberOfLines={expanded ? undefined : 2}>{summary}</Text>
+
+      {/* Expanded */}
+      {expanded && (
+        <View style={{ marginTop: 12, gap: 8 }}>
+          <Divider />
+
+          {/* Score Breakdown */}
+          {compKeys.length > 0 && (
+            <View style={{ backgroundColor: C.s2, borderRadius: 9, padding: 11, borderWidth: 1, borderColor: C.border2 }}>
+              <Text style={{ color: C.gold, fontSize: 9, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Score Breakdown</Text>
+              {compKeys.map(k => {
+                const comp = components[k];
+                const s = Number(comp?.score ?? comp ?? 0);
+                const w = Number(comp?.weight ?? 0);
+                const r = safeStr(comp?.reason, "");
+                const label = k.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+                const barW = Math.min(100, Math.round((s / Math.max(w, 1)) * 100));
+                return (
+                  <View key={k} style={{ marginBottom: 7 }}>
+                    <Row style={{ justifyContent: "space-between", marginBottom: 3 }}>
+                      <Text style={{ color: C.sub, fontSize: 11, fontWeight: "800" }}>{label}</Text>
+                      <Text style={{ color: s > 0 ? C.green : C.muted, fontSize: 11, fontWeight: "900" }}>{s}/{w || "?"}</Text>
+                    </Row>
+                    <View style={{ height: 3, backgroundColor: C.border, borderRadius: 2 }}>
+                      <View style={{ height: 3, width: `${barW}%`, backgroundColor: s > 0 ? C.green : C.border2, borderRadius: 2 }} />
+                    </View>
+                    {r ? <Text style={{ color: C.muted, fontSize: 9, marginTop: 2 }}>{r}</Text> : null}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          <View style={{ flexDirection: "row", gap: 7 }}>
+            {[
+              { l: "Trend", v: trend },
+              { l: "Fake Risk", v: fakeRisk, c: fakeRisk === "HIGH" ? C.red : fakeRisk === "LOW" ? C.green : C.sub },
+            ].map(({ l, v, c }) => (
+              <View key={l} style={{ flex: 1, backgroundColor: C.s2, borderRadius: 9, padding: 10, borderWidth: 1, borderColor: C.border }}>
+                <Text style={{ color: C.muted, fontSize: 8, fontWeight: "900", textTransform: "uppercase" }}>{l}</Text>
+                <Text style={{ color: c || C.text, fontSize: 13, fontWeight: "800", marginTop: 3 }}>{v}</Text>
+              </View>
+            ))}
+          </View>
+          <Row style={{ justifyContent: "space-between" }}>
+            <Text style={{ color: C.muted, fontSize: 11 }}>Gemini</Text>
+            <Text style={{ color: C.sub, fontSize: 11, fontWeight: "800" }}>{gemini}</Text>
+          </Row>
+          {fullReasons !== "--" && (
+            <View style={{ backgroundColor: C.s2, borderRadius: 9, padding: 11, borderWidth: 1, borderColor: C.border2 }}>
+              <Text style={{ color: C.blue, fontSize: 9, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>Analysis</Text>
+              <Text style={{ color: C.sub, fontSize: 12, lineHeight: 19 }}>{fullReasons}</Text>
+            </View>
+          )}
+          <View style={{ backgroundColor: C.greenLo, borderRadius: 9, padding: 11, borderWidth: 1, borderColor: C.green + "44" }}>
+            <Text style={{ color: C.green, fontSize: 9, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 5 }}>Recommendation</Text>
+            <Text style={{ color: C.text, fontSize: 13, fontWeight: "700", lineHeight: 20 }}>{recommend}</Text>
+          </View>
+        </View>
+      )}
+    </Card>
+  );
+}
 
   const isBuy  = decision === "BUY" || decision === "CE";
   const isSell = decision === "SELL" || decision === "PE";
@@ -851,6 +931,366 @@ function MiniPriceChart({ history }) {
   );
 }
 
+// ─── Backtest Screen ──────────────────────────────────────────────────────────
+function BacktestScreen({ apiFetch }) {
+  const [running, setRunning]   = useState(false);
+  const [result, setResult]     = useState(null);
+  const [report, setReport]     = useState(null);
+  const [dateInput, setDateInput] = useState("");
+  const [mode, setMode]         = useState("FAST");
+  const [btType, setBtType]     = useState("daily"); // daily | monthly
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const thisMonth = todayStr.substring(0, 7); // YYYY-MM
+
+  async function runBacktest() {
+    setRunning(true);
+    setResult(null);
+    setReport(null);
+    try {
+      const isMonthly = btType === "monthly";
+      const endpoint  = isMonthly ? "/backtest-month" : "/backtest";
+      const body = isMonthly
+        ? { mode, month: dateInput || thisMonth }
+        : { mode, date: dateInput || todayStr };
+
+      await apiFetch(endpoint, { method: "POST", body: JSON.stringify(body) }).catch(() => null);
+
+      // Poll for result
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        try {
+          const r = await apiFetch(endpoint);
+          const val = r?.data ?? r;
+          const rpt = val?.report || val?.summary || "";
+          if (!rpt || rpt.includes("running") || rpt.includes("not run")) {
+            if (attempts > 25) { clearInterval(poll); setRunning(false); setResult("Timeout — check server logs"); }
+            return;
+          }
+          clearInterval(poll);
+          setRunning(false);
+          setResult(val?.summary || "");
+          setReport(rpt);
+        } catch { /* keep polling */ }
+      }, 3000);
+    } catch (e) {
+      setResult(`Error: ${e.message}`);
+      setRunning(false);
+    }
+  }
+
+  function parseReport(text) {
+    if (!text) return null;
+    const lines = text.split("\n");
+    const get = (key) => {
+      const line = lines.find(l => l.startsWith(key + ":") || l.startsWith(key + " :"));
+      return line ? line.replace(key + ":", "").replace(key + " :", "").trim() : "--";
+    };
+    const tradeLines = lines.filter(l => l.match(/\|.*Entry|ENTRY|EXIT|CE|PE/i) && l.includes("|"));
+    return {
+      date: get("Date") !== "--" ? get("Date") : (btType === "monthly" ? (dateInput || thisMonth) : (dateInput || todayStr)),
+      mode: get("Mode"),
+      netPnl: get("Net P&L") !== "--" ? get("Net P&L") : get("Net PnL"),
+      grossPnl: get("Gross P&L") !== "--" ? get("Gross P&L") : get("Gross PnL"),
+      charges: get("Charges"),
+      ret: get("Return"),
+      trades: get("Trades"),
+      wins: get("Wins"),
+      losses: get("Losses"),
+      winRate: get("Win Rate"),
+      tradeLines,
+      rawText: text,
+    };
+  }
+
+  const parsed = parseReport(report);
+  const pnlVal = parsed ? parseFloat((parsed.netPnl || "0").replace(/[₹,]/g, "")) : 0;
+
+  return (
+    <>
+      <Card>
+        <CardHeader title="Backtest" sub="Simulate strategy on historical data" />
+
+        {/* Daily / Monthly toggle */}
+        <Row style={{ marginBottom: 10, gap: 7 }}>
+          {[["daily", "Daily"], ["monthly", "Monthly"]].map(([k, l]) => (
+            <TouchableOpacity key={k} onPress={() => { setBtType(k); setResult(null); setReport(null); }}
+              style={{ flex: 1, backgroundColor: btType === k ? C.blueLo : C.s2, borderRadius: 9, borderWidth: 1, borderColor: btType === k ? C.blue + "66" : C.border, paddingVertical: 10, alignItems: "center" }}>
+              <Text style={{ color: btType === k ? C.blue : C.sub, fontSize: 12, fontWeight: "900" }}>{l}</Text>
+            </TouchableOpacity>
+          ))}
+        </Row>
+
+        {/* Mode */}
+        <Row style={{ marginBottom: 10, gap: 7 }}>
+          {["FAST", "FULL"].map(m => (
+            <TouchableOpacity key={m} onPress={() => setMode(m)}
+              style={{ flex: 1, backgroundColor: mode === m ? C.accentLo : C.s2, borderRadius: 9, borderWidth: 1, borderColor: mode === m ? C.accent + "55" : C.border, paddingVertical: 10, alignItems: "center" }}>
+              <Text style={{ color: mode === m ? C.accent : C.sub, fontSize: 12, fontWeight: "900" }}>{m}</Text>
+            </TouchableOpacity>
+          ))}
+        </Row>
+
+        {/* Date input */}
+        <TextInput
+          style={{ backgroundColor: C.s2, borderColor: C.border2, borderWidth: 1, borderRadius: 10, color: C.text, fontSize: 13, paddingHorizontal: 13, paddingVertical: 11, marginBottom: 10 }}
+          value={dateInput}
+          onChangeText={setDateInput}
+          placeholder={btType === "monthly" ? `Month YYYY-MM (default: ${thisMonth})` : `Date YYYY-MM-DD (default: ${todayStr})`}
+          placeholderTextColor={C.muted}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+
+        <PrimaryBtn
+          label={running ? "⏳ Running..." : `▶  Run ${btType === "monthly" ? "Monthly" : "Daily"} ${mode} Backtest`}
+          color={C.accent}
+          onPress={running ? undefined : runBacktest}
+        />
+      </Card>
+
+      {result && !parsed && (
+        <Card>
+          <Text style={{ color: result.startsWith("Error") || result.startsWith("Timeout") ? C.red : C.sub, fontSize: 12, lineHeight: 19 }}>{result}</Text>
+        </Card>
+      )}
+
+      {parsed && (
+        <>
+          <Card glow={pnlVal >= 0 ? C.green : C.red}>
+            <CardHeader title={`${parsed.mode !== "--" ? parsed.mode + " · " : ""}${parsed.date}`} />
+            <Row style={{ gap: 7, marginBottom: 8 }}>
+              <StatBox label="Net P&L"  value={`₹${parsed.netPnl}`}  color={pnlVal >= 0 ? C.green : C.red} />
+              <StatBox label="Return"   value={parsed.ret}            color={pnlVal >= 0 ? C.green : C.red} />
+            </Row>
+            <Row style={{ gap: 7, marginBottom: 8 }}>
+              <StatBox label="Trades"   value={parsed.trades}  color={C.blue} />
+              <StatBox label="Win Rate" value={parsed.winRate} color={C.green} />
+            </Row>
+            <Row style={{ gap: 7 }}>
+              <StatBox label="Wins"    value={parsed.wins}   color={C.green} />
+              <StatBox label="Losses"  value={parsed.losses} color={C.red} />
+            </Row>
+            {(parsed.grossPnl !== "--" || parsed.charges !== "--") && (
+              <>
+                <Divider />
+                <Row style={{ justifyContent: "space-between" }}>
+                  <Text style={{ color: C.muted, fontSize: 11 }}>Gross P&L</Text>
+                  <Text style={{ color: C.text, fontSize: 11, fontWeight: "800" }}>₹{parsed.grossPnl}</Text>
+                </Row>
+                <Row style={{ justifyContent: "space-between", marginTop: 5 }}>
+                  <Text style={{ color: C.muted, fontSize: 11 }}>Charges</Text>
+                  <Text style={{ color: C.red, fontSize: 11, fontWeight: "800" }}>₹{parsed.charges}</Text>
+                </Row>
+              </>
+            )}
+          </Card>
+
+          {parsed.tradeLines.length > 0 && (
+            <Card>
+              <CardHeader title="Trades" sub={`${parsed.tradeLines.length} entries`} />
+              {parsed.tradeLines.slice(0, 20).map((line, i) => {
+                const parts = line.split("|").map(s => s.trim());
+                const netPart = parts.find(p => /net|pnl/i.test(p)) || "";
+                const netNum  = parseFloat(netPart.replace(/[^0-9.-]/g, "")) || 0;
+                return (
+                  <View key={i} style={{ paddingVertical: 8, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: C.border }}>
+                    <Row style={{ justifyContent: "space-between" }}>
+                      <Text style={{ color: C.text, fontSize: 11, fontWeight: "900", flex: 1 }} numberOfLines={1}>{parts.slice(0, 3).join(" · ")}</Text>
+                      <Text style={{ color: netNum >= 0 ? C.green : C.red, fontSize: 12, fontWeight: "900" }}>{netNum >= 0 ? "+" : ""}₹{Math.abs(netNum).toFixed(2)}</Text>
+                    </Row>
+                    <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }} numberOfLines={1}>{parts.slice(3).join(" · ")}</Text>
+                  </View>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* Raw report fallback */}
+          {parsed.tradeLines.length === 0 && parsed.rawText && (
+            <Card>
+              <CardHeader title="Report" />
+              <Text style={{ color: C.sub, fontSize: 11, lineHeight: 18, fontFamily: "monospace" }}>{parsed.rawText.substring(0, 2000)}</Text>
+            </Card>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+  async function runBacktest() {
+    setRunning(true);
+    setResult(null);
+    setReport(null);
+    try {
+      // POST to start backtest
+      const body = { mode, date: dateInput || todayStr };
+      await apiFetch("/backtest", { method: "POST", body: JSON.stringify(body) });
+
+      // Poll GET /backtest every 3s for result (max 60s)
+      setPolling(true);
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        try {
+          const r = await apiFetch("/backtest");
+          const rpt = r?.report || r?.data?.report || "";
+          const smry = r?.summary || r?.data?.summary || "";
+          // Not ready yet
+          if (rpt.includes("running") || rpt.includes("not run yet")) {
+            if (attempts > 20) { clearInterval(poll); setPolling(false); setRunning(false); }
+            return;
+          }
+          clearInterval(poll);
+          setPolling(false);
+          setRunning(false);
+          setResult(smry);
+          setReport(rpt);
+        } catch { /* keep polling */ }
+      }, 3000);
+    } catch (e) {
+      setResult(`Error: ${e.message}`);
+      setRunning(false);
+    }
+  }
+
+  // Parse report text into structured data
+  function parseReport(text) {
+    if (!text) return null;
+    const lines = text.split("\n");
+    const get = (key) => {
+      const line = lines.find(l => l.startsWith(key + ":"));
+      return line ? line.replace(key + ":", "").trim() : "--";
+    };
+    const tradeLines = lines.filter(l => l.match(/^\d{2}:\d{2}:\d{2}/));
+    return {
+      date:     get("Date"),
+      mode:     get("Mode"),
+      netPnl:   get("Net P&L"),
+      grossPnl: get("Gross P&L"),
+      charges:  get("Charges"),
+      ret:      get("Return"),
+      trades:   get("Trades"),
+      wins:     get("Wins"),
+      losses:   get("Losses"),
+      winRate:  get("Win Rate"),
+      tradeLines,
+    };
+  }
+
+  const parsed = parseReport(report);
+  const pnlVal = parsed ? parseFloat(parsed.netPnl) : 0;
+
+  return (
+    <>
+      {/* Controls */}
+      <Card>
+        <CardHeader title="Backtest" sub="Day-wise paper simulation" />
+
+        {/* Mode selector */}
+        <Row style={{ marginBottom: 10, gap: 7 }}>
+          {["FAST", "FULL"].map(m => (
+            <TouchableOpacity key={m} onPress={() => setMode(m)}
+              style={{ flex: 1, backgroundColor: mode === m ? C.accentLo : C.s2, borderRadius: 9, borderWidth: 1, borderColor: mode === m ? C.accent + "55" : C.border, paddingVertical: 10, alignItems: "center" }}>
+              <Text style={{ color: mode === m ? C.accent : C.sub, fontSize: 12, fontWeight: "900" }}>{m}</Text>
+            </TouchableOpacity>
+          ))}
+        </Row>
+
+        {/* Date input */}
+        <TextInput
+          style={{ backgroundColor: C.s2, borderColor: C.border2, borderWidth: 1, borderRadius: 10, color: C.text, fontSize: 13, paddingHorizontal: 13, paddingVertical: 11, marginBottom: 10 }}
+          value={dateInput}
+          onChangeText={setDateInput}
+          placeholder={`Date YYYY-MM-DD (default: ${todayStr})`}
+          placeholderTextColor={C.muted}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+
+        <PrimaryBtn
+          label={running ? (polling ? "⏳ Waiting for result..." : "Starting...") : `▶  Run ${mode} Backtest`}
+          color={C.accent}
+          onPress={running ? null : runBacktest}
+        />
+      </Card>
+
+      {/* Result */}
+      {result && !parsed && (
+        <Card>
+          <Text style={{ color: result.startsWith("Error") ? C.red : C.sub, fontSize: 12, lineHeight: 19 }}>{result}</Text>
+        </Card>
+      )}
+
+      {parsed && (
+        <>
+          {/* Summary card */}
+          <Card glow={pnlVal >= 0 ? C.green : C.red}>
+            <CardHeader title={`${parsed.mode} · ${parsed.date}`} />
+            <Row style={{ gap: 7, marginBottom: 8 }}>
+              <StatBox label="Net P&L"  value={`₹${parsed.netPnl}`}  color={pnlVal >= 0 ? C.green : C.red} />
+              <StatBox label="Return"   value={parsed.ret}            color={pnlVal >= 0 ? C.green : C.red} />
+            </Row>
+            <Row style={{ gap: 7, marginBottom: 8 }}>
+              <StatBox label="Trades"   value={parsed.trades}  color={C.blue} />
+              <StatBox label="Win Rate" value={parsed.winRate} color={C.green} />
+            </Row>
+            <Row style={{ gap: 7 }}>
+              <StatBox label="Wins"    value={parsed.wins}    color={C.green} />
+              <StatBox label="Losses"  value={parsed.losses}  color={C.red} />
+            </Row>
+            <Divider />
+            <Row style={{ justifyContent: "space-between" }}>
+              <Text style={{ color: C.muted, fontSize: 11 }}>Gross P&L</Text>
+              <Text style={{ color: C.text, fontSize: 11, fontWeight: "800" }}>₹{parsed.grossPnl}</Text>
+            </Row>
+            <Row style={{ justifyContent: "space-between", marginTop: 5 }}>
+              <Text style={{ color: C.muted, fontSize: 11 }}>Charges</Text>
+              <Text style={{ color: C.red, fontSize: 11, fontWeight: "800" }}>₹{parsed.charges}</Text>
+            </Row>
+          </Card>
+
+          {/* Trade list */}
+          {parsed.tradeLines.length > 0 && (
+            <Card>
+              <CardHeader title="Trades" sub={`${parsed.tradeLines.length} closed trades`} />
+              {parsed.tradeLines.map((line, i) => {
+                const parts = line.split("|").map(s => s.trim());
+                const times   = parts[0] || "--";
+                const type    = parts[1] || "";
+                const signal  = parts[2] || "";
+                const symbol  = parts[3] || "";
+                const entryPart = parts.find(p => p.startsWith("Entry")) || "";
+                const exitPart  = parts.find(p => p.startsWith("Exit"))  || "";
+                const netPart   = parts.find(p => p.startsWith("Net"))   || "";
+                const netNum = parseFloat((netPart.replace("Net", "").trim()) || "0");
+                const reason = parts[parts.length - 1] || "";
+
+                return (
+                  <View key={i} style={{ paddingVertical: 10, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: C.border }}>
+                    <Row style={{ justifyContent: "space-between", marginBottom: 4 }}>
+                      <Text style={{ color: C.text, fontSize: 12, fontWeight: "900" }}>{symbol}</Text>
+                      <Text style={{ color: netNum >= 0 ? C.green : C.red, fontSize: 13, fontWeight: "900" }}>
+                        {netNum >= 0 ? "+" : ""}₹{netNum.toFixed(2)}
+                      </Text>
+                    </Row>
+                    <Text style={{ color: C.muted, fontSize: 10 }}>
+                      {times} · {signal} {type} · {entryPart} · {exitPart}
+                    </Text>
+                    <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }} numberOfLines={1}>{reason}</Text>
+                  </View>
+                );
+              })}
+            </Card>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 // ─── Info Screen ──────────────────────────────────────────────────────────────
 function InfoScreen({ status, trades, logs, activeInfoTab, setActiveInfoTab }) {
   const TABS = ["live", "risk", "reports", "health"];
@@ -913,13 +1353,19 @@ function InfoScreen({ status, trades, logs, activeInfoTab, setActiveInfoTab }) {
             ["Auto Start", s?.health?.auto_start_bot ? "ON" : "OFF"],
             ["Expiry Day", s?.expiry_day ? "YES" : "NO"],
             ["Position",   s?.health?.position_open ? "OPEN" : "NONE"],
-            ["Update",     safeStr(s?.update_status?.summary, "--")],
           ].map(([l, v]) => (
             <Row key={l} style={{ justifyContent: "space-between", paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.border }}>
               <Text style={{ color: C.muted, fontSize: 12, fontWeight: "800" }}>{l}</Text>
               <Text style={{ color: C.text, fontSize: 12, fontWeight: "900" }}>{v}</Text>
             </Row>
           ))}
+          {/* Update status — only show if NOT auto-update-fail */}
+          {s?.update_status?.summary && !s.update_status.summary.includes("Auto update failed") ? (
+            <Row style={{ justifyContent: "space-between", paddingVertical: 7 }}>
+              <Text style={{ color: C.muted, fontSize: 12, fontWeight: "800" }}>Update</Text>
+              <Text style={{ color: C.text, fontSize: 12, fontWeight: "900" }}>{s.update_status.summary}</Text>
+            </Row>
+          ) : null}
         </Card>
       )}
     </>
@@ -927,7 +1373,24 @@ function InfoScreen({ status, trades, logs, activeInfoTab, setActiveInfoTab }) {
 }
 
 // ─── Settings Screen ──────────────────────────────────────────────────────────
-function SettingsScreen({ urlInput, setUrlInput, tokenInput, setTokenInput, autoRefresh, setAutoRefresh, baseUrl, onSave, status, postJson }) {
+function SettingsScreen({ urlInput, setUrlInput, tokenInput, setTokenInput, autoRefresh, setAutoRefresh, baseUrl, onSave, status, postJson, apiFetch }) {
+  const [capitalInput, setCapitalInput] = useState("");
+  const [capitalSaving, setCapitalSaving] = useState(false);
+
+  async function updateCapital() {
+    const val = parseFloat(capitalInput);
+    if (!val || val <= 0) { Alert.alert("Invalid", "Enter valid capital amount"); return; }
+    setCapitalSaving(true);
+    try {
+      await apiFetch("/set-capital", { method: "POST", body: JSON.stringify({ capital: val }) });
+      Alert.alert("Done", `Capital updated to ₹${val.toLocaleString("en-IN")}`);
+      setCapitalInput("");
+    } catch (e) {
+      Alert.alert("Error", e.message);
+    }
+    setCapitalSaving(false);
+  }
+
   return (
     <>
       <Card>
@@ -938,7 +1401,7 @@ function SettingsScreen({ urlInput, setUrlInput, tokenInput, setTokenInput, auto
           <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>Auto Refresh (4s)</Text>
           <Switch value={autoRefresh} onValueChange={setAutoRefresh} trackColor={{ false: C.s3, true: C.accent + "88" }} thumbColor={autoRefresh ? C.accent : C.muted} />
         </Row>
-        <Row>
+        <Row style={{ marginBottom: 12, gap: 6 }}>
           {["Tailscale", "WiFi", "Cloud", "Local"].map(m => (
             <TouchableOpacity key={m} onPress={() => {
               const map = { Tailscale: "http://100.", WiFi: "http://192.168.", Cloud: "http://", Local: "http://127.0.0.1:18765" };
@@ -948,9 +1411,26 @@ function SettingsScreen({ urlInput, setUrlInput, tokenInput, setTokenInput, auto
             </TouchableOpacity>
           ))}
         </Row>
-        <View style={{ marginTop: 12 }}>
-          <PrimaryBtn label="Save & Connect" icon="⚡" color={C.accent} onPress={onSave} />
-        </View>
+        <PrimaryBtn label="Save & Connect" icon="⚡" color={C.accent} onPress={onSave} />
+      </Card>
+
+      {/* Paper Capital Update */}
+      <Card>
+        <CardHeader title="Paper Capital" sub={`Current: ₹${Number(status?.paper_capital || status?.capital || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} />
+        <TextInput
+          style={st.input}
+          value={capitalInput}
+          onChangeText={setCapitalInput}
+          placeholder="Enter new capital amount e.g. 50000"
+          placeholderTextColor={C.muted}
+          keyboardType="numeric"
+        />
+        <PrimaryBtn
+          label={capitalSaving ? "Updating..." : "Update Paper Capital"}
+          icon="₹"
+          color={C.blue}
+          onPress={capitalSaving ? undefined : updateCapital}
+        />
       </Card>
 
       <Card>
