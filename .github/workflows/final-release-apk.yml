@@ -1,14 +1,14 @@
-name: Build Android APK
+name: FINAL Release APK Bundled
 
 on:
   workflow_dispatch:
 
 concurrency:
-  group: android-apk-${{ github.ref }}
+  group: final-release-apk-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-android:
+  build-release:
     runs-on: ubuntu-latest
 
     steps:
@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check old crash markers
+      - name: Check JS crash markers
         run: |
           ! grep -n "parseReport(report)" App.js
           ! grep -n "<<<<<<<\|=======\|>>>>>>>" App.js
@@ -38,27 +38,27 @@ jobs:
       - name: Prebuild Android
         run: npx expo prebuild --platform android --clean
 
-      - name: Force bundle JS into APK assets
+      - name: Bundle JS into APK assets
         run: |
           mkdir -p android/app/src/main/assets
           npx expo export:embed --eager --entry-file index.js --platform android --dev false --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
           test -s android/app/src/main/assets/index.android.bundle
           ls -lh android/app/src/main/assets/index.android.bundle
 
-      - name: Build Release APK
+      - name: Build RELEASE APK not debug
         run: |
           cd android
           chmod +x gradlew
           ./gradlew :app:assembleRelease
 
-      - name: Prepare unique APK
+      - name: Rename APK
         run: |
           APK=$(ls android/app/build/outputs/apk/release/*.apk | head -n 1)
-          cp "$APK" "option-king-ai-release-${{ github.run_number }}.apk"
-          ls -lh "option-king-ai-release-${{ github.run_number }}.apk"
+          cp "$APK" "FINAL-OKAI-release-${{ github.run_number }}.apk"
+          ls -lh "FINAL-OKAI-release-${{ github.run_number }}.apk"
 
-      - name: Upload Release APK
+      - name: Upload FINAL APK
         uses: actions/upload-artifact@v4
         with:
-          name: option-king-ai-release-${{ github.run_number }}
-          path: option-king-ai-release-${{ github.run_number }}.apk
+          name: FINAL-OKAI-release-${{ github.run_number }}
+          path: FINAL-OKAI-release-${{ github.run_number }}.apk
