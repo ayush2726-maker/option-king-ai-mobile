@@ -884,10 +884,36 @@ function MiniPriceChart({ history }) {
 
 // ─── Backtest Screen ──────────────────────────────────────────────────────────
 
+const BT_MODES = [
+  { key: "REALISTIC",         label: "Day (Real)",   needsDate: true,  needsMonth: false, hint: "Accurate single-day backtest with real option candles" },
+  { key: "REALISTIC_MONTHLY", label: "Month (Real)", needsDate: false, needsMonth: true,  hint: "Accurate monthly backtest (slower, most accurate)" },
+  { key: "ACTUAL",            label: "Actual Replay",needsDate: true,  needsMonth: false, hint: "Replay actually recorded trades for a day" },
+  { key: "FAST",              label: "Quick",        needsDate: false, needsMonth: false, hint: "Quick local estimate (least accurate)" },
+];
+
+function todayYMD() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+function thisMonthYM() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+}
+
 function BacktestScreen({ apiFetch }) {
+  const [mode, setMode] = useState("REALISTIC");
+  const [date, setDate] = useState(todayYMD());
+  const [month, setMonth] = useState(thisMonthYM());
+  const [capital, setCapital] = useState("");
   const [loading, setLoading] = useState(false);
+  const [polling, setPolling] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+
+  const activeMode = BT_MODES.find((m) => m.key === mode) || BT_MODES[0];
 
   const getVal = (obj, keys, fallback = "--") => {
     try {
@@ -898,96 +924,242 @@ function BacktestScreen({ apiFetch }) {
     return fallback;
   };
 
+  const validateInputs = () => {
+    if (activeMode.needsDate && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return "Date format must be YYYY-MM-DD (e.g. 2026-06-25)";
+    }
+    if (activeMode.needsMonth && !/^\d{4}-\d{2}$/.test(month)) {
+      return "Month format must be YYYY-MM (e.g. 2026-06)";
+    }
+    if (capital && (isNaN(parseFloat(capital)) || parseFloat(capital) <= 0)) {
+      return "Capital must be a positive number";
+    }
+    return null;
+  };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
   const runBacktest = async () => {
+    const validationError = validateInputs();
+    if (validationError) {
+      Alert.alert("Invalid", validationError);
+      return;
+    }
     setLoading(true);
     setError("");
+    setResult(null);
     try {
-      if (typeof apiFetch !== "function") {
-        throw new Error("apiFetch not available");
+      if (typeof apiFetch !== "function") throw new Error("apiFetch not available");
+
+      const payload = { mode };
+      if (activeMode.needsDate) payload.date = date;
+      if (activeMode.needsMonth) payload.month = month;
+      if (capital) payload.capital = parseFloat(capital);
+
+      // 1) POST to start the backtest
+      const startRes = await apiFetch("/backtest", { method: "POST", body: JSON.stringify(payload) });
+      if (startRes && startRes.ok === false) {
+        throw new Error(startRes.error || "Backtest could not start");
       }
 
-      let res = null;
-      try {
-        res = await apiFetch("/backtest?range=day");
-      } catch (e1) {
+      // 2) Poll GET /backtest until summary changes from "running" state
+      setPolling(true);
+      const maxPolls = 60; // ~2 minutes max
+      let prev = null;
+      let final = null;
+      for (let i = 0; i < maxPolls; i++) {
+        await sleep(2000);
         try {
-          res = await apiFetch("/backtest");
-        } catch (e2) {
-          res = await apiFetch("/api/backtest");
+          const r = await apiFetch("/backtest");
+          const summary = (r?.summary || "").toLowerCase();
+          if (summary && !summary.includes("running")) {
+            final = r;
+            break;
+          }
+          prev = r;
+        } catch (e) {
+          // network glitch — continue polling
         }
       }
-
-      const data = res?.data || res?.result || res || {};
-      setResult(data);
+      setPolling(false);
+      setResult(final || prev || { summary: "No result yet. Try again or check Server Logs.", report: "" });
     } catch (e) {
       setError(String(e?.message || e || "Backtest failed"));
+      setPolling(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const rows = result?.rows || result?.trades || result?.data || [];
-  const summary = result?.summary || result?.report || result?.message || "";
+  // Parse stats from result.summary text. Backend returns plain-text summaries like:
+  //   "REALISTIC | Capital: 100000 -> 102345 | Net P&L: 2345 | Trades: 8 | Win: 5/8 (62.5%)"
   const stats = result?.stats || result || {};
+  const summary = result?.summary || result?.report || "";
+  const reportText = result?.report || "";
+  const parsedFromSummary = (() => {
+    if (!summary) return {};
+    const s = String(summary);
+    const grab = (re) => {
+      const m = s.match(re);
+      return m ? m[1] : null;
+    };
+    return {
+      capital_to: grab(/->\s*([\d.,-]+)/),
+      net_pnl:    grab(/Net\s*P&L:?\s*([\d.,-]+)/i),
+      trades:     grab(/Trades:?\s*(\d+)/i),
+      win_rate:   grab(/\((\d+\.?\d*)\s*%\)/),
+    };
+  })();
+  const rows = result?.rows || result?.trades || result?.data || [];
 
   return (
     <View style={{ gap: 12 }}>
       <Card>
-        <Row style={{ justifyContent: "space-between", marginBottom: 12 }}>
-          <Text style={{ color: C.sub, fontSize: 10, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" }}>
-            Backtest
-          </Text>
-          <TouchableOpacity
-            onPress={runBacktest}
-            disabled={loading}
-            style={{
-              backgroundColor: loading ? C.s2 : C.accentLo,
-              borderColor: C.accent + "55",
-              borderWidth: 1,
-              borderRadius: 10,
-              paddingHorizontal: 14,
-              paddingVertical: 9
-            }}
-          >
+        {/* Header */}
+        <Text style={{ color: C.sub, fontSize: 10, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>
+          Backtest
+        </Text>
+
+        {/* Mode selector */}
+        <Text style={{ color: C.sub, fontSize: 11, fontWeight: "800", marginBottom: 6 }}>Mode</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+          {BT_MODES.map((m) => {
+            const active = m.key === mode;
+            return (
+              <TouchableOpacity
+                key={m.key}
+                onPress={() => setMode(m.key)}
+                disabled={loading}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                  borderRadius: 8,
+                  backgroundColor: active ? C.accentLo : C.s2,
+                  borderWidth: 1,
+                  borderColor: active ? C.accent + "88" : C.border,
+                }}
+              >
+                <Text style={{ color: active ? C.accent : C.sub, fontWeight: "800", fontSize: 11 }}>{m.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <Text style={{ color: C.muted, fontSize: 11, lineHeight: 16, marginBottom: 12 }}>{activeMode.hint}</Text>
+
+        {/* Date / Month inputs */}
+        {activeMode.needsDate ? (
+          <>
+            <Text style={{ color: C.sub, fontSize: 11, fontWeight: "800", marginBottom: 6 }}>Date (YYYY-MM-DD)</Text>
+            <TextInput
+              value={date}
+              onChangeText={setDate}
+              placeholder="2026-06-25"
+              placeholderTextColor={C.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!loading}
+              style={{ backgroundColor: C.s2, borderColor: C.border, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: C.text, fontSize: 14, marginBottom: 10 }}
+            />
+          </>
+        ) : null}
+
+        {activeMode.needsMonth ? (
+          <>
+            <Text style={{ color: C.sub, fontSize: 11, fontWeight: "800", marginBottom: 6 }}>Month (YYYY-MM)</Text>
+            <TextInput
+              value={month}
+              onChangeText={setMonth}
+              placeholder="2026-06"
+              placeholderTextColor={C.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!loading}
+              style={{ backgroundColor: C.s2, borderColor: C.border, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: C.text, fontSize: 14, marginBottom: 10 }}
+            />
+          </>
+        ) : null}
+
+        {/* Capital (optional) */}
+        <Text style={{ color: C.sub, fontSize: 11, fontWeight: "800", marginBottom: 6 }}>Starting Capital (optional)</Text>
+        <TextInput
+          value={capital}
+          onChangeText={setCapital}
+          placeholder="Leave empty to use server's paper capital"
+          placeholderTextColor={C.muted}
+          keyboardType="numeric"
+          editable={!loading}
+          style={{ backgroundColor: C.s2, borderColor: C.border, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: C.text, fontSize: 14, marginBottom: 12 }}
+        />
+
+        {/* Run button */}
+        <TouchableOpacity
+          onPress={runBacktest}
+          disabled={loading}
+          style={{
+            backgroundColor: loading ? C.s2 : C.accentLo,
+            borderColor: C.accent + "55",
+            borderWidth: 1,
+            borderRadius: 10,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            alignItems: "center",
+          }}
+        >
+          {loading ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <ActivityIndicator size="small" color={C.accent} />
+              <Text style={{ color: C.accent, fontWeight: "900" }}>
+                {polling ? "Running backtest…" : "Starting…"}
+              </Text>
+            </View>
+          ) : (
             <Text style={{ color: C.accent, fontWeight: "900" }}>
-              {loading ? "Running..." : "Run Day Backtest"}
+              Run {activeMode.label} Backtest
             </Text>
-          </TouchableOpacity>
-        </Row>
+          )}
+        </TouchableOpacity>
 
         {error ? (
-          <Text style={{ color: C.red, fontSize: 12, fontWeight: "800", lineHeight: 18 }}>
+          <Text style={{ color: C.red, fontSize: 12, fontWeight: "800", lineHeight: 18, marginTop: 12 }}>
             Backtest error: {error}
           </Text>
         ) : null}
 
-        <View style={{ gap: 8 }}>
+        {/* Stats grid */}
+        <View style={{ gap: 8, marginTop: 16 }}>
           <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>
-            Capital: {getVal(stats, ["capital", "start_capital", "startingCapital"])}
+            Capital: {getVal(stats, ["capital", "start_capital", "startingCapital"], parsedFromSummary.capital_to || "--")}
           </Text>
           <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>
-            Net P&L: {getVal(stats, ["net_pnl", "netPnl", "pnl"])}
+            Net P&L: {getVal(stats, ["net_pnl", "netPnl", "pnl"], parsedFromSummary.net_pnl || "--")}
           </Text>
           <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>
-            Trades: {getVal(stats, ["trades", "total_trades", "count"])}
+            Trades: {getVal(stats, ["trades", "total_trades", "count"], parsedFromSummary.trades || "--")}
           </Text>
           <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>
-            Win Rate: {getVal(stats, ["win_rate", "winRate"])}
+            Win Rate: {getVal(stats, ["win_rate", "winRate"], parsedFromSummary.win_rate ? `${parsedFromSummary.win_rate}%` : "--")}
           </Text>
         </View>
 
         {summary ? (
-          <Text style={{ color: C.sub, fontSize: 12, lineHeight: 18, marginTop: 12 }}>
-            {String(summary).slice(0, 1200)}
-          </Text>
-        ) : (
-          <Text style={{ color: C.sub, fontSize: 12, lineHeight: 18, marginTop: 12 }}>
-            Backtest run karo. Agar server response galat hoga to app crash nahi hogi, error yahin dikhega.
-          </Text>
-        )}
+          <View style={{ marginTop: 14, padding: 10, borderRadius: 10, backgroundColor: C.s2, borderColor: C.border, borderWidth: 1 }}>
+            <Text style={{ color: C.sub, fontSize: 10, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Summary</Text>
+            <Text style={{ color: C.text, fontSize: 12, lineHeight: 18 }}>{String(summary).slice(0, 600)}</Text>
+          </View>
+        ) : null}
+
+        {reportText && reportText !== summary ? (
+          <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: C.s2, borderColor: C.border, borderWidth: 1 }}>
+            <Text style={{ color: C.sub, fontSize: 10, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Report</Text>
+            <Text style={{ color: C.sub, fontSize: 11, lineHeight: 16 }}>{String(reportText).slice(0, 1400)}</Text>
+          </View>
+        ) : null}
 
         {Array.isArray(rows) && rows.length ? (
           <View style={{ marginTop: 12, gap: 8 }}>
+            <Text style={{ color: C.sub, fontSize: 10, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>
+              Trades ({rows.length})
+            </Text>
             {rows.slice(0, 10).map((r, i) => (
               <View key={i} style={{ padding: 10, borderRadius: 10, backgroundColor: C.s2 }}>
                 <Text style={{ color: C.text, fontSize: 12, fontWeight: "800" }}>
@@ -1093,7 +1265,7 @@ function SettingsScreen({ urlInput, setUrlInput, tokenInput, setTokenInput, auto
     if (!val || val <= 0) { Alert.alert("Invalid", "Enter valid capital amount"); return; }
     setCapitalSaving(true);
     try {
-      await apiFetch("/set-capital", { method: "POST", body: JSON.stringify({ capital: val }) });
+      await apiFetch("/capital", { method: "POST", body: JSON.stringify({ capital: val }) });
       Alert.alert("Done", `Capital updated to ₹${val.toLocaleString("en-IN")}`);
       setCapitalInput("");
     } catch (e) {
