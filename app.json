@@ -4,14 +4,9 @@
     "slug": "okai-tradex-mobile",
     "version": "1.0.0",
     "icon": "./icon.png",
-    "extra": {
-      "eas": {
-        "projectId": "41e87b49-70e5-4cd2-8fa0-9d3005257122"
-      }
-    },
     "android": {
       "package": "com.ayush2726.optionkingaimobile",
-      "versionCode": 21,
+      "versionCode": 34,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-foreground.png",
         "backgroundColor": "#07111f"
@@ -26,6 +21,11 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c3981bee-cee2-4c13-bb6b-785395d7043a"
+      }
+    }
   }
 }

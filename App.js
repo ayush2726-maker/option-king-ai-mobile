@@ -79,6 +79,25 @@ function reasonList(r) {
   return safeStr(r);
 }
 
+
+function lotSizeFor(symbol = "", explicitLotSize = 0) {
+  const n = Number(explicitLotSize || 0);
+  if (n > 0) return n;
+  const sym = String(symbol || "").toUpperCase();
+  if (sym.includes("BANKNIFTY")) return 35;
+  if (sym.includes("SENSEX")) return 20;
+  return 65; // NIFTY default
+}
+
+function qtyLotsText(qty, symbol = "", explicitLotSize = 0) {
+  const q = Number(qty || 0);
+  if (!q || !isFinite(q)) return "--";
+  const lot = lotSizeFor(symbol, explicitLotSize);
+  const lots = lot > 0 ? q / lot : 0;
+  const lotsText = Number.isInteger(lots) ? String(lots) : lots.toFixed(2);
+  return `Qty: ${q} / Lots: ${lotsText}`;
+}
+
 // ─── Reusable primitives ─────────────────────────────────────────────────────
 function Tag({ label, color = C.blue, bg }) {
   return (
@@ -571,7 +590,7 @@ function PositionCard({ position }) {
       </Row>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
         {[
-          { l: "Qty",    v: position.qty },
+          { l: "Qty",    v: qtyLotsText(position.qty, position.symbol, position.lot_size || position.lotSize) },
           { l: "Entry",  v: money(position.entry) },
           { l: "LTP",    v: money(position.ltp) },
           { l: "SL",     v: money(position.sl),     c: C.red },
@@ -705,74 +724,6 @@ function AiDecisionCard({ status, expanded, onToggle }) {
   );
 }
 
-  const isBuy  = decision === "BUY" || decision === "CE";
-  const isSell = decision === "SELL" || decision === "PE";
-  const decColor = isBuy ? C.green : isSell ? C.red : C.sub;
-
-  return (
-    <Card glow={isBuy ? C.green : isSell ? C.red : null}>
-      <TouchableOpacity onPress={onToggle}>
-        <Row style={{ justifyContent: "space-between", marginBottom: 12 }}>
-          <Text style={{ color: C.sub, fontSize: 10, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" }}>AI Decision</Text>
-          <Row style={{ gap: 8 }}>
-            <View style={{ backgroundColor: decColor + "22", borderRadius: 8, borderWidth: 1, borderColor: decColor + "55", paddingHorizontal: 14, paddingVertical: 6 }}>
-              <Text style={{ color: decColor, fontSize: 13, fontWeight: "900" }}>{decision}</Text>
-            </View>
-            <Text style={{ color: C.muted, fontSize: 12 }}>{expanded ? "▲" : "▼"}</Text>
-          </Row>
-        </Row>
-      </TouchableOpacity>
-
-      {/* Always visible summary */}
-      <View style={{ flexDirection: "row", gap: 7, marginBottom: 10 }}>
-        {[
-          { l: "Score", v: score, c: C.gold },
-          { l: "Confidence", v: confidence, c: C.blue },
-          { l: "Regime", v: regime, c: C.text },
-        ].map(({ l, v, c }) => (
-          <View key={l} style={{ flex: 1, backgroundColor: C.s2, borderRadius: 9, padding: 10, borderWidth: 1, borderColor: C.border }}>
-            <Text style={{ color: C.muted, fontSize: 8, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8 }}>{l}</Text>
-            <Text style={{ color: c, fontSize: 13, fontWeight: "900", marginTop: 3 }} numberOfLines={1}>{v}</Text>
-          </View>
-        ))}
-      </View>
-
-      <Text style={{ color: C.sub, fontSize: 12, lineHeight: 18 }} numberOfLines={expanded ? undefined : 2}>{summary}</Text>
-
-      {/* Expanded */}
-      {expanded && (
-        <View style={{ marginTop: 12, gap: 8 }}>
-          <Divider />
-          <View style={{ flexDirection: "row", gap: 7 }}>
-            {[
-              { l: "Trend", v: trend },
-              { l: "Fake Risk", v: fakeRisk, c: fakeRisk === "HIGH" ? C.red : fakeRisk === "LOW" ? C.green : C.sub },
-            ].map(({ l, v, c }) => (
-              <View key={l} style={{ flex: 1, backgroundColor: C.s2, borderRadius: 9, padding: 10, borderWidth: 1, borderColor: C.border }}>
-                <Text style={{ color: C.muted, fontSize: 8, fontWeight: "900", textTransform: "uppercase" }}>{l}</Text>
-                <Text style={{ color: c || C.text, fontSize: 13, fontWeight: "800", marginTop: 3 }}>{v}</Text>
-              </View>
-            ))}
-          </View>
-          <Row style={{ justifyContent: "space-between" }}>
-            <Text style={{ color: C.muted, fontSize: 11 }}>Gemini</Text>
-            <Text style={{ color: C.sub, fontSize: 11, fontWeight: "800" }}>{gemini}</Text>
-          </Row>
-          {fullReasons !== "--" && (
-            <View style={{ backgroundColor: C.s2, borderRadius: 9, padding: 11, borderWidth: 1, borderColor: C.border2 }}>
-              <Text style={{ color: C.blue, fontSize: 9, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>Analysis</Text>
-              <Text style={{ color: C.sub, fontSize: 12, lineHeight: 19 }}>{fullReasons}</Text>
-            </View>
-          )}
-          <View style={{ backgroundColor: C.greenLo, borderRadius: 9, padding: 11, borderWidth: 1, borderColor: C.green + "44" }}>
-            <Text style={{ color: C.green, fontSize: 9, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 5 }}>Recommendation</Text>
-            <Text style={{ color: C.text, fontSize: 13, fontWeight: "700", lineHeight: 20 }}>{recommend}</Text>
-          </View>
-        </View>
-      )}
-    </Card>
-  );
-}
 
 // ─── Trade Suggestion Card ───────────────────────────────────────────────────
 function TradeSuggestionCard({ status }) {
@@ -784,7 +735,7 @@ function TradeSuggestionCard({ status }) {
   const sl      = s.sl       ? money(s.sl)        : "--";
   const target  = s.target   ? money(s.target)    : "--";
   const symbol  = safeStr(s.symbol, "");
-  const qty     = s.qty      ? `${s.qty} lots`    : "--";
+  const qty     = qtyLotsText(s.qty, s.symbol, s.lot_size || s.lotSize);
   const reason  = safeStr(s.reason || s.summary, isLoading ? "Loading..." : "No setup yet");
 
   let rr = "--";
