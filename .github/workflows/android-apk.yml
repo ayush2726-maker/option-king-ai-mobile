@@ -1,67 +1,18 @@
 name: Build Android APK
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-    paths:
-      - App.js
-      - app.json
-      - package.json
-      - package-lock.json
-      - .github/workflows/android-apk.yml
-      - .github/scripts/mobile_hotfix.py
-      - .github/assets/okai-tradex-icon.png.b64
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
-  build-apk:
+  build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Apply verified mobile UI
-        run: python3 .github/scripts/mobile_hotfix.py
-
-      - name: Apply OKAI TradeX branding and icon
-        run: |
-          python3 - <<'PY'
-          import base64
-          import json
-          from pathlib import Path
-
-          app_js = Path("App.js")
-          text = app_js.read_text(encoding="utf-8")
-          text = text.replace("Option King AI", "OKAI TradeX")
-          text = text.replace("OptionKing", "OKAI TradeX")
-          text = text.replace("option king", "OKAI TradeX")
-          app_js.write_text(text, encoding="utf-8")
-
-          app_json_path = Path("app.json")
-          app_json = json.loads(app_json_path.read_text(encoding="utf-8"))
-          expo = app_json.setdefault("expo", {})
-          expo["name"] = "OKAI TradeX"
-          expo["slug"] = "okai-tradex-mobile"
-          app_json_path.write_text(json.dumps(app_json, indent=2) + "\n", encoding="utf-8")
-
-          icon_b64_path = Path(".github/assets/okai-tradex-icon.png.b64")
-          icon_bytes = base64.b64decode(icon_b64_path.read_text(encoding="ascii"))
-          assets_dir = Path("assets")
-          assets_dir.mkdir(exist_ok=True)
-          for name in ("icon.png", "adaptive-icon.png", "adaptive-foreground.png"):
-              (assets_dir / name).write_bytes(icon_bytes)
-
-          print("Applied OKAI TradeX branding and launcher icon")
-          PY
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -75,48 +26,20 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Android project
-        env:
-          CI: true
-          EXPO_NO_TELEMETRY: 1
-        run: npx expo prebuild --platform android --clean --npm
+      - name: Prebuild Android
+        run: npx expo prebuild --platform android --clean
 
-      - name: Force installable release signing
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          build_gradle = Path("android/app/build.gradle")
-          text = build_gradle.read_text(encoding="utf-8")
-          marker = "release {\n"
-          start = text.find(marker)
-          if start != -1:
-              end = text.find("\n        }", start + len(marker))
-              block = text[start:end if end != -1 else len(text)]
-              if "signingConfig signingConfigs.debug" not in block:
-                  text = text[:start] + marker + "            signingConfig signingConfigs.debug\n" + text[start + len(marker):]
-                  build_gradle.write_text(text, encoding="utf-8")
-                  print("Release APK will use debug signing config")
-              else:
-                  print("Release signing config already present")
-          PY
-
-      - name: Build release APK with bundled JS
+      - name: Build Debug APK
         run: |
           cd android
-          chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
-          find app/build/outputs/apk -type f -name "*.apk" -print
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OKAI-TradeX-Mobile-build18-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
-          retention-days: 14
+          name: option-king-ai-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

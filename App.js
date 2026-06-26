@@ -954,8 +954,6 @@ function BacktestScreen({ apiFetch }) {
       rawText: text,
     };
   }
-
-  const parsed = parseReport(report);
   const pnlVal = parsed ? parseFloat((parsed.netPnl || "0").replace(/[₹,]/g, "")) : 0;
 
   return (
@@ -1130,9 +1128,6 @@ function BacktestScreen({ apiFetch }) {
       tradeLines,
     };
   }
-
-  const parsed = parseReport(report);
-
 // ─── Info Screen ──────────────────────────────────────────────────────────────
 function InfoScreen({ status, trades, logs, activeInfoTab, setActiveInfoTab }) {
   const TABS = ["live", "risk", "reports", "health"];
