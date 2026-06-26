@@ -883,252 +883,126 @@ function MiniPriceChart({ history }) {
 }
 
 // ─── Backtest Screen ──────────────────────────────────────────────────────────
+
 function BacktestScreen({ apiFetch }) {
-  const [running, setRunning]   = useState(false);
-  const [result, setResult]     = useState(null);
-  const [report, setReport]     = useState(null);
-  const [dateInput, setDateInput] = useState("");
-  const [mode, setMode]         = useState("FAST");
-  const [btType, setBtType]     = useState("daily"); // daily | monthly
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
 
-  const todayStr = new Date().toISOString().split("T")[0];
-  const thisMonth = todayStr.substring(0, 7); // YYYY-MM
-
-  async function runBacktest() {
-    setRunning(true);
-    setResult(null);
-    setReport(null);
+  const getVal = (obj, keys, fallback = "--") => {
     try {
-      const isMonthly = btType === "monthly";
-      const endpoint  = isMonthly ? "/backtest-month" : "/backtest";
-      const body = isMonthly
-        ? { mode, month: dateInput || thisMonth }
-        : { mode, date: dateInput || todayStr };
+      for (const k of keys) {
+        if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return String(obj[k]);
+      }
+    } catch (e) {}
+    return fallback;
+  };
 
-      await apiFetch(endpoint, { method: "POST", body: JSON.stringify(body) }).catch(() => null);
+  const runBacktest = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      if (typeof apiFetch !== "function") {
+        throw new Error("apiFetch not available");
+      }
 
-      // Poll for result
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
+      let res = null;
+      try {
+        res = await apiFetch("/backtest?range=day");
+      } catch (e1) {
         try {
-          const r = await apiFetch(endpoint);
-          const val = r?.data ?? r;
-          const rpt = val?.report || val?.summary || "";
-          if (!rpt || rpt.includes("running") || rpt.includes("not run")) {
-            if (attempts > 25) { clearInterval(poll); setRunning(false); setResult("Timeout — check server logs"); }
-            return;
-          }
-          clearInterval(poll);
-          setRunning(false);
-          setResult(val?.summary || "");
-          setReport(rpt);
-        } catch { /* keep polling */ }
-      }, 3000);
-    } catch (e) {
-      setResult(`Error: ${e.message}`);
-      setRunning(false);
-    }
-  }
+          res = await apiFetch("/backtest");
+        } catch (e2) {
+          res = await apiFetch("/api/backtest");
+        }
+      }
 
-  function parseReport(text) {
-    if (!text) return null;
-    const lines = text.split("\n");
-    const get = (key) => {
-      const line = lines.find(l => l.startsWith(key + ":") || l.startsWith(key + " :"));
-      return line ? line.replace(key + ":", "").replace(key + " :", "").trim() : "--";
-    };
-    const tradeLines = lines.filter(l => l.match(/\|.*Entry|ENTRY|EXIT|CE|PE/i) && l.includes("|"));
-    return {
-      date: get("Date") !== "--" ? get("Date") : (btType === "monthly" ? (dateInput || thisMonth) : (dateInput || todayStr)),
-      mode: get("Mode"),
-      netPnl: get("Net P&L") !== "--" ? get("Net P&L") : get("Net PnL"),
-      grossPnl: get("Gross P&L") !== "--" ? get("Gross P&L") : get("Gross PnL"),
-      charges: get("Charges"),
-      ret: get("Return"),
-      trades: get("Trades"),
-      wins: get("Wins"),
-      losses: get("Losses"),
-      winRate: get("Win Rate"),
-      tradeLines,
-      rawText: text,
-    };
-  }
-  const pnlVal = parsed ? parseFloat(((parsed || {}).netPnl || "0").replace(/[₹,]/g, "")) : 0;
+      const data = res?.data || res?.result || res || {};
+      setResult(data);
+    } catch (e) {
+      setError(String(e?.message || e || "Backtest failed"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const rows = result?.rows || result?.trades || result?.data || [];
+  const summary = result?.summary || result?.report || result?.message || "";
+  const stats = result?.stats || result || {};
 
   return (
-    <>
+    <View style={{ gap: 12 }}>
       <Card>
-        <CardHeader title="Backtest" sub="Simulate strategy on historical data" />
-
-        {/* Daily / Monthly toggle */}
-        <Row style={{ marginBottom: 10, gap: 7 }}>
-          {[["daily", "Daily"], ["monthly", "Monthly"]].map(([k, l]) => (
-            <TouchableOpacity key={k} onPress={() => { setBtType(k); setResult(null); setReport(null); }}
-              style={{ flex: 1, backgroundColor: btType === k ? C.blueLo : C.s2, borderRadius: 9, borderWidth: 1, borderColor: btType === k ? C.blue + "66" : C.border, paddingVertical: 10, alignItems: "center" }}>
-              <Text style={{ color: btType === k ? C.blue : C.sub, fontSize: 12, fontWeight: "900" }}>{l}</Text>
-            </TouchableOpacity>
-          ))}
+        <Row style={{ justifyContent: "space-between", marginBottom: 12 }}>
+          <Text style={{ color: C.sub, fontSize: 10, fontWeight: "900", letterSpacing: 1, textTransform: "uppercase" }}>
+            Backtest
+          </Text>
+          <TouchableOpacity
+            onPress={runBacktest}
+            disabled={loading}
+            style={{
+              backgroundColor: loading ? C.s2 : C.accentLo,
+              borderColor: C.accent + "55",
+              borderWidth: 1,
+              borderRadius: 10,
+              paddingHorizontal: 14,
+              paddingVertical: 9
+            }}
+          >
+            <Text style={{ color: C.accent, fontWeight: "900" }}>
+              {loading ? "Running..." : "Run Day Backtest"}
+            </Text>
+          </TouchableOpacity>
         </Row>
 
-        {/* Mode */}
-        <Row style={{ marginBottom: 10, gap: 7 }}>
-          {["FAST", "FULL"].map(m => (
-            <TouchableOpacity key={m} onPress={() => setMode(m)}
-              style={{ flex: 1, backgroundColor: mode === m ? C.accentLo : C.s2, borderRadius: 9, borderWidth: 1, borderColor: mode === m ? C.accent + "55" : C.border, paddingVertical: 10, alignItems: "center" }}>
-              <Text style={{ color: mode === m ? C.accent : C.sub, fontSize: 12, fontWeight: "900" }}>{m}</Text>
-            </TouchableOpacity>
-          ))}
-        </Row>
+        {error ? (
+          <Text style={{ color: C.red, fontSize: 12, fontWeight: "800", lineHeight: 18 }}>
+            Backtest error: {error}
+          </Text>
+        ) : null}
 
-        {/* Date input */}
-        <TextInput
-          style={{ backgroundColor: C.s2, borderColor: C.border2, borderWidth: 1, borderRadius: 10, color: C.text, fontSize: 13, paddingHorizontal: 13, paddingVertical: 11, marginBottom: 10 }}
-          value={dateInput}
-          onChangeText={setDateInput}
-          placeholder={btType === "monthly" ? `Month YYYY-MM (default: ${thisMonth})` : `Date YYYY-MM-DD (default: ${todayStr})`}
-          placeholderTextColor={C.muted}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+        <View style={{ gap: 8 }}>
+          <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>
+            Capital: {getVal(stats, ["capital", "start_capital", "startingCapital"])}
+          </Text>
+          <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>
+            Net P&L: {getVal(stats, ["net_pnl", "netPnl", "pnl"])}
+          </Text>
+          <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>
+            Trades: {getVal(stats, ["trades", "total_trades", "count"])}
+          </Text>
+          <Text style={{ color: C.text, fontSize: 13, fontWeight: "800" }}>
+            Win Rate: {getVal(stats, ["win_rate", "winRate"])}
+          </Text>
+        </View>
 
-        <PrimaryBtn
-          label={running ? "⏳ Running..." : `▶  Run ${btType === "monthly" ? "Monthly" : "Daily"} ${mode} Backtest`}
-          color={C.accent}
-          onPress={running ? undefined : runBacktest}
-        />
+        {summary ? (
+          <Text style={{ color: C.sub, fontSize: 12, lineHeight: 18, marginTop: 12 }}>
+            {String(summary).slice(0, 1200)}
+          </Text>
+        ) : (
+          <Text style={{ color: C.sub, fontSize: 12, lineHeight: 18, marginTop: 12 }}>
+            Backtest run karo. Agar server response galat hoga to app crash nahi hogi, error yahin dikhega.
+          </Text>
+        )}
+
+        {Array.isArray(rows) && rows.length ? (
+          <View style={{ marginTop: 12, gap: 8 }}>
+            {rows.slice(0, 10).map((r, i) => (
+              <View key={i} style={{ padding: 10, borderRadius: 10, backgroundColor: C.s2 }}>
+                <Text style={{ color: C.text, fontSize: 12, fontWeight: "800" }}>
+                  {getVal(r, ["time", "date"], `Trade ${i + 1}`)} | {getVal(r, ["signal", "side"])} | P&L {getVal(r, ["pnl", "net_pnl", "netPnl"])}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </Card>
-
-      {result && !parsed && (
-        <Card>
-          <Text style={{ color: result.startsWith("Error") || result.startsWith("Timeout") ? C.red : C.sub, fontSize: 12, lineHeight: 19 }}>{result}</Text>
-        </Card>
-      )}
-
-      {parsed && (
-        <>
-          <Card glow={pnlVal >= 0 ? C.green : C.red}>
-            <CardHeader title={`${parsed.mode !== "--" ? parsed.mode + " · " : ""}${parsed.date}`} />
-            <Row style={{ gap: 7, marginBottom: 8 }}>
-              <StatBox label="Net P&L"  value={`₹${(parsed || {}).netPnl}`}  color={pnlVal >= 0 ? C.green : C.red} />
-              <StatBox label="Return"   value={parsed.ret}            color={pnlVal >= 0 ? C.green : C.red} />
-            </Row>
-            <Row style={{ gap: 7, marginBottom: 8 }}>
-              <StatBox label="Trades"   value={parsed.trades}  color={C.blue} />
-              <StatBox label="Win Rate" value={parsed.winRate} color={C.green} />
-            </Row>
-            <Row style={{ gap: 7 }}>
-              <StatBox label="Wins"    value={parsed.wins}   color={C.green} />
-              <StatBox label="Losses"  value={parsed.losses} color={C.red} />
-            </Row>
-            {((parsed || {}).grossPnl !== "--" || (parsed || {}).charges !== "--") && (
-              <>
-                <Divider />
-                <Row style={{ justifyContent: "space-between" }}>
-                  <Text style={{ color: C.muted, fontSize: 11 }}>Gross P&L</Text>
-                  <Text style={{ color: C.text, fontSize: 11, fontWeight: "800" }}>₹{(parsed || {}).grossPnl}</Text>
-                </Row>
-                <Row style={{ justifyContent: "space-between", marginTop: 5 }}>
-                  <Text style={{ color: C.muted, fontSize: 11 }}>Charges</Text>
-                  <Text style={{ color: C.red, fontSize: 11, fontWeight: "800" }}>₹{(parsed || {}).charges}</Text>
-                </Row>
-              </>
-            )}
-          </Card>
-
-          {parsed.tradeLines.length > 0 && (
-            <Card>
-              <CardHeader title="Trades" sub={`${parsed.tradeLines.length} entries`} />
-              {parsed.tradeLines.slice(0, 20).map((line, i) => {
-                const parts = line.split("|").map(s => s.trim());
-                const netPart = parts.find(p => /net|pnl/i.test(p)) || "";
-                const netNum  = parseFloat(netPart.replace(/[^0-9.-]/g, "")) || 0;
-                return (
-                  <View key={i} style={{ paddingVertical: 8, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: C.border }}>
-                    <Row style={{ justifyContent: "space-between" }}>
-                      <Text style={{ color: C.text, fontSize: 11, fontWeight: "900", flex: 1 }} numberOfLines={1}>{parts.slice(0, 3).join(" · ")}</Text>
-                      <Text style={{ color: netNum >= 0 ? C.green : C.red, fontSize: 12, fontWeight: "900" }}>{netNum >= 0 ? "+" : ""}₹{Math.abs(netNum).toFixed(2)}</Text>
-                    </Row>
-                    <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }} numberOfLines={1}>{parts.slice(3).join(" · ")}</Text>
-                  </View>
-                );
-              })}
-            </Card>
-          )}
-
-          {/* Raw report fallback */}
-          {parsed.tradeLines.length === 0 && parsed.rawText && (
-            <Card>
-              <CardHeader title="Report" />
-              <Text style={{ color: C.sub, fontSize: 11, lineHeight: 18, fontFamily: "monospace" }}>{parsed.rawText.substring(0, 2000)}</Text>
-            </Card>
-          )}
-        </>
-      )}
-    </>
+    </View>
   );
 }
 
-  async function runBacktest() {
-    setRunning(true);
-    setResult(null);
-    setReport(null);
-    try {
-      // POST to start backtest
-      const body = { mode, date: dateInput || todayStr };
-      await apiFetch("/backtest", { method: "POST", body: JSON.stringify(body) });
-
-      // Poll GET /backtest every 3s for result (max 60s)
-      setPolling(true);
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
-        try {
-          const r = await apiFetch("/backtest");
-          const rpt = r?.report || r?.data?.report || "";
-          const smry = r?.summary || r?.data?.summary || "";
-          // Not ready yet
-          if (rpt.includes("running") || rpt.includes("not run yet")) {
-            if (attempts > 20) { clearInterval(poll); setPolling(false); setRunning(false); }
-            return;
-          }
-          clearInterval(poll);
-          setPolling(false);
-          setRunning(false);
-          setResult(smry);
-          setReport(rpt);
-        } catch { /* keep polling */ }
-      }, 3000);
-    } catch (e) {
-      setResult(`Error: ${e.message}`);
-      setRunning(false);
-    }
-  }
-
-  // Parse report text into structured data
-  function parseReport(text) {
-    if (!text) return null;
-    const lines = text.split("\n");
-    const get = (key) => {
-      const line = lines.find(l => l.startsWith(key + ":"));
-      return line ? line.replace(key + ":", "").trim() : "--";
-    };
-    const tradeLines = lines.filter(l => l.match(/^\d{2}:\d{2}:\d{2}/));
-    return {
-      date:     get("Date"),
-      mode:     get("Mode"),
-      netPnl:   get("Net P&L"),
-      grossPnl: get("Gross P&L"),
-      charges:  get("Charges"),
-      ret:      get("Return"),
-      trades:   get("Trades"),
-      wins:     get("Wins"),
-      losses:   get("Losses"),
-      winRate:  get("Win Rate"),
-      tradeLines,
-    };
-  }
-// ─── Info Screen ──────────────────────────────────────────────────────────────
+// ---- Info Screen -------------------------------------------------------------
 function InfoScreen({ status, trades, logs, activeInfoTab, setActiveInfoTab }) {
   const TABS = ["live", "risk", "reports", "health"];
   const s = status;
