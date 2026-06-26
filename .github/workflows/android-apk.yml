@@ -41,5 +41,5 @@ jobs:
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: option-king-ai-release-apk
+          name: option-king-ai-release-apk-${{ github.run_number }}
           path: android/app/build/outputs/apk/release/*.apk
