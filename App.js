@@ -954,7 +954,7 @@ function BacktestScreen({ apiFetch }) {
       rawText: text,
     };
   }
-  const pnlVal = parsed ? parseFloat((parsed.netPnl || "0").replace(/[₹,]/g, "")) : 0;
+  const pnlVal = parsed ? parseFloat(((parsed || {}).netPnl || "0").replace(/[₹,]/g, "")) : 0;
 
   return (
     <>
@@ -1010,7 +1010,7 @@ function BacktestScreen({ apiFetch }) {
           <Card glow={pnlVal >= 0 ? C.green : C.red}>
             <CardHeader title={`${parsed.mode !== "--" ? parsed.mode + " · " : ""}${parsed.date}`} />
             <Row style={{ gap: 7, marginBottom: 8 }}>
-              <StatBox label="Net P&L"  value={`₹${parsed.netPnl}`}  color={pnlVal >= 0 ? C.green : C.red} />
+              <StatBox label="Net P&L"  value={`₹${(parsed || {}).netPnl}`}  color={pnlVal >= 0 ? C.green : C.red} />
               <StatBox label="Return"   value={parsed.ret}            color={pnlVal >= 0 ? C.green : C.red} />
             </Row>
             <Row style={{ gap: 7, marginBottom: 8 }}>
@@ -1021,16 +1021,16 @@ function BacktestScreen({ apiFetch }) {
               <StatBox label="Wins"    value={parsed.wins}   color={C.green} />
               <StatBox label="Losses"  value={parsed.losses} color={C.red} />
             </Row>
-            {(parsed.grossPnl !== "--" || parsed.charges !== "--") && (
+            {((parsed || {}).grossPnl !== "--" || (parsed || {}).charges !== "--") && (
               <>
                 <Divider />
                 <Row style={{ justifyContent: "space-between" }}>
                   <Text style={{ color: C.muted, fontSize: 11 }}>Gross P&L</Text>
-                  <Text style={{ color: C.text, fontSize: 11, fontWeight: "800" }}>₹{parsed.grossPnl}</Text>
+                  <Text style={{ color: C.text, fontSize: 11, fontWeight: "800" }}>₹{(parsed || {}).grossPnl}</Text>
                 </Row>
                 <Row style={{ justifyContent: "space-between", marginTop: 5 }}>
                   <Text style={{ color: C.muted, fontSize: 11 }}>Charges</Text>
-                  <Text style={{ color: C.red, fontSize: 11, fontWeight: "800" }}>₹{parsed.charges}</Text>
+                  <Text style={{ color: C.red, fontSize: 11, fontWeight: "800" }}>₹{(parsed || {}).charges}</Text>
                 </Row>
               </>
             )}
