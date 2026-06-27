@@ -892,13 +892,21 @@ const BT_MODES = [
 ];
 
 function todayYMD() {
+  // Use YESTERDAY as default — today's candles may not be available yet from broker
   const d = new Date();
+  d.setDate(d.getDate() - 1);
+  // If yesterday was weekend, walk back to last Friday
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() - 1);
+  }
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
 }
 function thisMonthYM() {
+  // Use LAST month as default for monthly backtest (current month may be incomplete)
   const d = new Date();
+  d.setMonth(d.getMonth() - 1);
   const m = String(d.getMonth() + 1).padStart(2, "0");
   return `${d.getFullYear()}-${m}`;
 }
